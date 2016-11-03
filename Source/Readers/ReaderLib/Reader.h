@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <memory>
+#include <functional>
 #include "Sequences.h"
 #include "TensorShape.h"
 
@@ -108,6 +109,8 @@ struct Minibatch
         : m_endOfSweep(endOfSweep), m_endOfEpoch(endOfEpoch)
     {
     }
+
+    std::function<std::string(const size_t)> m_idToKeyMapping;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

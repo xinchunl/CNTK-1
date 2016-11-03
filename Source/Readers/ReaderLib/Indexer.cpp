@@ -14,8 +14,9 @@ const static char ROW_DELIMITER = '\n';
 
 namespace Microsoft { namespace MSR { namespace CNTK {
 
-Indexer::Indexer(FILE* file, bool isPrimary, bool skipSequenceIds, char streamPrefix, size_t chunkSize, size_t bufferSize) :
+Indexer::Indexer(FILE* file, bool isPrimary, bool skipSequenceIds, bool numericSequenceId, char streamPrefix, size_t chunkSize, size_t bufferSize) :
     m_streamPrefix(streamPrefix),
+    m_numericSequenceId(numericSequenceId),
     m_bufferSize(bufferSize),
     m_file(file),
     m_fileOffsetStart(0),
@@ -72,7 +73,7 @@ void Indexer::BuildFromLines(CorpusDescriptorPtr corpus)
             sd.m_fileOffsetBytes = offset;
             offset = GetFileOffset() + 1;
             sd.m_byteSize = offset - sd.m_fileOffsetBytes;
-            AddSequenceIfIncluded(corpus, lines, sd);
+            AddSequenceIfIncluded(corpus, corpus->KeyToId(std::to_string(lines)), sd);
             ++m_pos;
             ++lines;
         }
@@ -90,7 +91,7 @@ void Indexer::BuildFromLines(CorpusDescriptorPtr corpus)
         sd.m_numberOfSamples = 1;
         sd.m_fileOffsetBytes = offset;
         sd.m_byteSize = m_fileOffsetEnd - sd.m_fileOffsetBytes;
-        AddSequenceIfIncluded(corpus, lines, sd);
+        AddSequenceIfIncluded(corpus, corpus->KeyToId(std::to_string(lines)), sd);
     }
 }
 
@@ -129,7 +130,7 @@ void Indexer::Build(CorpusDescriptorPtr corpus)
     size_t id = 0;
     int64_t offset = GetFileOffset();
     // read the very first sequence id
-    if (!TryGetSequenceId(id))
+    if (!TryGetSequenceId(id, corpus->KeyToId))
     {
         RuntimeError("Expected a sequence id at the offset %" PRIi64 ", none was found.", offset);
     }
@@ -144,7 +145,7 @@ void Indexer::Build(CorpusDescriptorPtr corpus)
         offset = GetFileOffset(); // a new line starts at this offset;
         sd.m_numberOfSamples++;
 
-        if (!m_done && TryGetSequenceId(id) && id != currentKey)
+        if (!m_done && TryGetSequenceId(id, corpus->KeyToId) && id != currentKey)
         {
             // found a new sequence, which starts at the [offset] bytes into the file
             sd.m_byteSize = offset - sd.m_fileOffsetBytes;
@@ -164,11 +165,23 @@ void Indexer::Build(CorpusDescriptorPtr corpus)
 void Indexer::AddSequenceIfIncluded(CorpusDescriptorPtr corpus, size_t sequenceId, SequenceDescriptor& sd)
 {
     auto key = std::to_string(sequenceId);
-    if (corpus->IsIncluded(key))
+    if (corpus->IsIncluded(corpus->IdToKey(sequenceId)))
     {
-        sd.m_key.m_sequence = corpus->KeyToId(key);
-        sd.m_key.m_sample = 0;
-        m_index.AddSequence(sd);
+        if (corpus->IsIncluded(key))
+        {
+            sd.m_key.m_sequence = corpus->KeyToId(key);
+            sd.m_key.m_sample = 0;
+            m_index.AddSequence(sd);
+        }
+    }
+    else
+    {
+        if (corpus->IsIncluded(key))
+        {
+            sd.m_key.m_sequence = corpus->KeyToId(key);
+            sd.m_key.m_sample = 0;
+            m_index.AddSequence(sd);
+        }
     }
 }
 
@@ -190,24 +203,40 @@ void Indexer::SkipLine()
     }
 }
 
-bool Indexer::TryGetSequenceId(size_t& id)
+bool Indexer::TryGetSequenceId(size_t& id, std::function<size_t(const std::string&)> mapping)
 {
     bool found = false;
     id = 0;
+    std::string key;
     while (!m_done)
     {
         while (m_pos != m_bufferEnd)
         {
             char c = *m_pos;
 
-            if (!isdigit(c))
+            if (m_numericSequenceId)
             {
-                // Stop as soon as there's a non-digit character
-                return found;
+                if (!isdigit(c))
+                {
+                    // Stop as soon as there's a non-digit character
+                    return found;
+                }
+                id = id * 10 + (c - '0');
+            }
+            else
+            {
+                if (isspace(c))
+                {
+                    if (found)
+                        id = mapping(key);
+
+                    // Stop as soon as there's a non-digit character
+                    return found;
+                }
+                key += c;
             }
 
             found |= true;
-            id = id * 10 + (c - '0');
             ++m_pos;
         }
         RefillBuffer();

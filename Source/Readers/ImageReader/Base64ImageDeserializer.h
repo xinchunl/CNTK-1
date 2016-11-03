@@ -40,5 +40,4 @@ namespace Microsoft { namespace MSR { namespace CNTK {
         std::shared_ptr<FILE> m_dataFile;
         std::wstring m_fileName;
     };
-
 }}}

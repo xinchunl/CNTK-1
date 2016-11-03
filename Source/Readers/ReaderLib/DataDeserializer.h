@@ -26,6 +26,12 @@ struct KeyType
 
     // Sample id.
     size_t m_sample : 24;
+
+    size_t AsSizeT()
+    {
+        size_t tmp = m_sequence;
+        return (tmp << 40) | m_sample;
+    }
 };
 
 class Chunk;
@@ -71,6 +77,8 @@ struct SequenceDataBase
     // The actual size is provided for particular sequences,i.e. see DenseSequenceData, or SparseSequenceData.
     virtual const void* GetDataBuffer() = 0;
 
+    KeyType m_key;
+    ChunkPtr m_chunk;
     ElementType m_elementType;     // Sequence element type.
     TensorShapePtr m_sampleLayout; // Sample layout, can be shared by several sequences.
     bool m_isValid;                // Flag indicating if sequence is valid.
