@@ -23,14 +23,19 @@ from .ops.variables import Variable
 # this is what we initialize weight matrices from by default
 from .blocks import _get_current_default_options, _is_given, _initializer_for, _resolve_activation, _INFERRED
 
+# BUGBUG: For node naming, currently it is a workaround before we are able to name Block. 
+
 # Dense -- create a fully-connected linear projection layer with optional non-linear activation
 # Note: shape may describe a tensor as well.
 # input_rank given: number of inferred axes to add to W (map_rank must not be given)
 # map_rank   given: expand W to leave exactly mapRank axes (input_rank must not be given)
 # none       given: expand W to all (same as map_rank=0)
-def Dense(shape, init=init_default_or_glorot_uniform, activation=activation_default_or_None,
+# name: name of the output node BEFORE activation 
+def Dense(shape, init=init_default_or_glorot_uniform,  
+          activation=activation_default_or_None,
           input_rank=None, map_rank=None,
-          bias=bias_default_or_True, init_bias=init_bias_default_or_0):
+          bias=bias_default_or_True, init_bias=init_bias_default_or_0, 
+          name='Dense'):
     activation = _resolve_activation(activation)
     bias       = bias if _is_given(bias) else _get_current_default_options().bias
     output_shape = _as_tuple(shape)
@@ -65,21 +70,24 @@ def Dense(shape, init=init_default_or_glorot_uniform, activation=activation_defa
 
     # parameters bound to this Function
     init_weights = _initializer_for(init, Record(output_rank=output_rank))
-    W = Parameter(input_shape + output_shape, init=init_weights, name='W')
-    b = Parameter(              output_shape, init=init_bias,    name='b') if bias else None
+    W = Parameter(input_shape + output_shape, init=init_weights, name=name+'.W')
+    b = Parameter(              output_shape, init=init_bias,    name=name+'.b') if bias else None
 
     # expression of this function
-    x = Placeholder(name='dense_arg')
-    apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map)
+    x = Placeholder(name=name+'.arg')
     if b:
-        apply_x = apply_x + b
+        apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map)
+        apply_x = plus(apply_x, b, name=name)
+    else: 
+        apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map, name=name)
     apply_x = apply_x >> activation
-    return Block(apply_x, 'Dense', Record(W=W, b=b))
+    return Block(apply_x, "Dense", Record(W=W, b=b))
 
 # Embedding -- create a linear embedding layer
 # To create an embedding from a file, use this:
 #  Embedding(weights=np.load('PATH'))
-def Embedding(shape=None, init=None, weights=None):
+# name: name of the output node
+def Embedding(shape=None, init=None, weights=None, name='Embedding'):
     if init is not None or weights is not None:
         raise ValueError('Embedding: init and weights options are mutually exclusive')
 
@@ -92,7 +100,7 @@ def Embedding(shape=None, init=None, weights=None):
             init = init_default_or_glorot_uniform
         shape = _as_tuple(shape)
         weight_shape = _INFERRED + shape
-        E = Parameter(weight_shape, init=init, name='E')
+        E = Parameter(weight_shape, init=init, name=name+'.E')
     # weights given: use them as constant
     else:
         UntestedBranchError("Embedding, from constant")
@@ -105,11 +113,11 @@ def Embedding(shape=None, init=None, weights=None):
         if shape is not None: # user may give shape, then it must match
             if len(shape) >= len(weight_shape) or weight_shape[-len(shape):] != shape:
                 raise ValueError('Embedding: shape parameter must match weights')
-        E = Constant(weights, name='E')
+        E = Constant(weights, name=name+'.E')
 
     # expression
-    x = Placeholder(name='embedding_arg')
-    apply_x = times(x, E)
+    x = Placeholder(name=name+'.arg')
+    apply_x = times(x, E, name=name)
     return Block(apply_x, 'Embedding', Record(E=E))
 
 # Convolution -- create a convolution layer with optional non-linearity
@@ -122,6 +130,7 @@ def Embedding(shape=None, init=None, weights=None):
 # TODO: conflict of parameter order: filter_shape or num_filters first?
 #  - filter_shape first is logical for non-NN applications such as straight image filtering
 #  - num_filters first is what Keras does
+# name: name of the output node BEFORE activation 
 def Convolution(filter_shape,        # e.g. (3,3)
                 num_filters=None,    # e.g. 64 or None (which means 1 channel and don't add a dimension_
                 activation=activation_default_or_None,
@@ -133,7 +142,8 @@ def Convolution(filter_shape,        # e.g. (3,3)
                 init_bias=init_bias_default_or_0,
                 reduction_rank=1, # (must be 1 currently)
                 transpose=False,  # (must be False currently)
-                max_temp_mem_size_in_samples=0):
+                max_temp_mem_size_in_samples=0, 
+                name='Convolution'):
     #UntestedBranchError("Convolution")
     activation = _resolve_activation(activation)
     pad  = pad  if _is_given(pad ) else _get_current_default_options().pad
@@ -154,23 +164,32 @@ def Convolution(filter_shape,        # e.g. (3,3)
     #init_kernel = glorot_uniform(filter_rank=-filter_rank, output_rank=1)
     init_kernel = _initializer_for(init, Record(filter_rank=filter_rank, output_rank=-1))
     # BUGBUG: It is very confusing that output_rank is negative, esp. since that means count from the start. Solution: add a flag
-    W = Parameter(output_channels_shape + kernel_shape,             init=init_kernel, name='W')                   # (K, C, H, W) aka [ W x H x C x K ]
-    b = Parameter(output_channels_shape + (1,) * len(filter_shape), init=init_bias,   name='b') if bias else None # (K,    1, 1) aka [ 1 x 1 x     K ]
+    W = Parameter(output_channels_shape + kernel_shape,             init=init_kernel, name=name+'.W')                   # (K, C, H, W) aka [ W x H x C x K ]
+    b = Parameter(output_channels_shape + (1,) * len(filter_shape), init=init_bias,   name=name+'.b') if bias else None # (K,    1, 1) aka [ 1 x 1 x     K ]
 
     # expression
-    x = Placeholder(name='convolution_arg')
+    x = Placeholder(name=name+'.arg')
     # TODO: update the parameter order of convolution() to match the optional ones as in here? (options order matches Keras)
-    apply_x = convolution (W, x,
-                           strides=_as_tuple(strides),
-                           sharing=_as_tuple(sharing),
-                           auto_padding=_as_tuple(pad),
-                           # TODO: can we rename auto_padding to pad?
-                           transpose=transpose,
-                           max_temp_mem_size_in_samples=max_temp_mem_size_in_samples)
-    if bias:
-        apply_x = apply_x + b
+    if bias: 
+        apply_x = convolution (W, x,
+                               strides=_as_tuple(strides),
+                               sharing=_as_tuple(sharing),
+                               auto_padding=_as_tuple(pad),
+                               # TODO: can we rename auto_padding to pad?
+                               transpose=transpose,
+                               max_temp_mem_size_in_samples=max_temp_mem_size_in_samples)
+        apply_x = plus(apply_x, b, name=name)
+    else: 
+        apply_x = convolution (W, x,
+                               strides=_as_tuple(strides),
+                               sharing=_as_tuple(sharing),
+                               auto_padding=_as_tuple(pad),
+                               # TODO: can we rename auto_padding to pad?
+                               transpose=transpose,
+                               max_temp_mem_size_in_samples=max_temp_mem_size_in_samples, 
+                               name=name)
     apply_x = apply_x >> activation
-    return Block(apply_x, 'Convolution', Record(W=W, b=b))
+    return Block(apply_x, "Convolution", Record(W=W, b=b))
 
 # Create a Pooling layer with one of following types:
 #
@@ -178,44 +197,49 @@ def Convolution(filter_shape,        # e.g. (3,3)
 #   AveragePooling and GlobalAveragePooling
 #
 # Setting the filter_shape to None, mean global pooling.
+# name: name of the output node
 from cntk.cntk_py import PoolingType_Max, PoolingType_Average, NDShape
 def Pooling(op,      # PoolingType_Max or _Average
             filter_shape,  # e.g. (3,3)
             strides=1,
-            pad=False):
-    x = Placeholder(name='pooling_arg')
-    apply_x = pooling (x, op, filter_shape, strides=_as_tuple(strides), auto_padding=_as_tuple(pad))
+            pad=False, 
+            name='Pooling'):
+    x = Placeholder(name=name+'.arg')
 
-    if op == PoolingType_Average:
-        op_name = 'AveragePooling'
-    elif op == PoolingType_Max:
-        op_name = 'MaxPooling'
-    else:
-        raise ValueError('Pooling: op must be PoolingType_Max or PoolingType_average')
+    if op == PoolingType_Average: 
+        op_name = 'AveragePooling' 
+    elif op == PoolingType_Max: 
+        op_name = 'MaxPooling' 
+    else: 
+        raise ValueError('Pooling: op must be PoolingType_Max or PoolingType_average') 
+    apply_x = pooling (x, op, filter_shape, strides=_as_tuple(strides), auto_padding=_as_tuple(pad), name=name)
     return Block(apply_x, op_name)
 
 # MaxPooling
 def MaxPooling(filter_shape,  # e.g. (3,3)
                strides=1,
-               pad=False):
-    return Pooling(PoolingType_Max, filter_shape, strides=strides, pad=pad)
+               pad=False, 
+               name='MaxPooling'):
+    return Pooling(PoolingType_Max, filter_shape, strides=strides, pad=pad, name=name)
 
 # AveragePooling
 def AveragePooling(filter_shape,  # e.g. (3,3)
                    strides=1,
-                   pad=False):
-    return Pooling(PoolingType_Average, filter_shape, strides=strides, pad=pad)
+                   pad=False, 
+                   name='AveragePooling'):
+    return Pooling(PoolingType_Average, filter_shape, strides=strides, pad=pad, name=name)
 
 # GlobalMaxPooling
-def GlobalMaxPooling():
-    return Pooling(PoolingType_Max, NDShape.unknown.dimensions(), pad=False)
+def GlobalMaxPooling(name='GlobalMaxPooling'):
+    return Pooling(PoolingType_Max, NDShape.unknown.dimensions(), pad=False, name=name)
 
 # GlobalAveragePooling
-def GlobalAveragePooling():
-    return Pooling(PoolingType_Average, NDShape.unknown.dimensions(), pad=False)
+def GlobalAveragePooling(name='GlobalAveragePooling'):
+    return Pooling(PoolingType_Average, NDShape.unknown.dimensions(), pad=False, name=name)
 
 # Recurrence() -- run a block recurrently over a time sequence
-def Recurrence(over, go_backwards=False, initial_state=initial_state_default_or_None):
+# name: name of the output node
+def Recurrence(over, go_backwards=False, initial_state=initial_state_default_or_None, name='Recurrence'):
     # helper to compute previous value
     # can take a single Variable/Function or a tuple
     initial_state = initial_state if _is_given(initial_state) else _get_current_default_options().initial_state
@@ -228,7 +252,7 @@ def Recurrence(over, go_backwards=False, initial_state=initial_state_default_or_
         # not a tuple: must be a 'scalar', i.e. a single element
         return past_value  (state, initial_state) if not go_backwards else \
                future_value(state, initial_state)
-    x = Placeholder(name='recurrence_arg')
+    x = Placeholder(name=name+'.arg')
     state_forward = over.create_placeholder() # create a placeholder or a tuple of placeholders
     prev_state = previous_hook(state_forward)  # delay (h, c)
     f_x_h_c = over(x, prev_state) # apply the recurrent over
@@ -240,70 +264,75 @@ def Recurrence(over, go_backwards=False, initial_state=initial_state_default_or_
     if _trace_layers:
         _log_node(h)
         _log_node(combine([h.owner]))
-    apply_x = combine([h])     # the Function that yielded 'h', so we get to know its inputs
+    apply_x = combine([h], name=name)     # the Function that yielded 'h', so we get to know its inputs
     # apply_x is a Function x -> h
     return Block(apply_x, 'Recurrence', Record(over=over))
 
 # Delay -- delay input
 # TODO: This does not really have bound parameters. Should it still be a layer?
-def Delay(T=1, initial_state=None):
+# name: name of the output node
+def Delay(T=1, initial_state=None, name='Delay'):
     UntestedBranchError("Delay")
 
     # expression
-    x = Placeholder(name='delay_arg')
+    x = Placeholder(name=name+'.arg')
     if T > 0:
-        apply_x = past_value  (x, time_step=T, initial_state=initial_state)
+        apply_x = past_value  (x, time_step=T, initial_state=initial_state, name=name)
     elif T < 0:
-        apply_x = future_value(x, time_step=-T, initial_state=initial_state)
+        apply_x = future_value(x, time_step=-T, initial_state=initial_state, name=name)
     else:
         apply_x = x
     return Block(apply_x, 'Delay')
 
 # Dropout -- create a drop-out layer
-def Dropout(prob):
+# name: name of the output node
+def Dropout(prob, name='Dropout'):
     # expression
-    x = Placeholder(name='dropout_arg')
-    apply_x = dropout(x, dropout_rate=prob)
+    x = Placeholder(name=name+'.arg')
+    apply_x = dropout(x, dropout_rate=prob, name=name)
     return Block(apply_x, 'Dropout')
 
 # BatchNormalization -- create a batch-normalization layer
+# name: name of the output node
 # TODO: spatial_rank is broken. We should specify the #slowest-changing axes. E.g. 1 would work for images and vectors. Requires C+ change.
 def BatchNormalization(map_rank=None,  # if given then normalize only over this many dimensions. E.g. 1 to tie all (h,w) in a (C, H, W)-shaped input
                        init_scale=1,
                        normalization_time_constant=5000, blend_time_constant=0,
-                       epsilon=0.00001, use_cntk_engine=False):
+                       epsilon=0.00001, use_cntk_engine=False, 
+                       name='BatchNormalization'):
     # TODO: make map_rank a default option, once per-layer type defaults are implemented
 
     # parameters bound to this Function
     norm_shape  = _INFERRED
     if map_rank is not None and map_rank != 1:
         UntestedBranchError("BatchNormalization map_rank can only be 1 or None for now")
-    scale        = Parameter(norm_shape, init=init_scale)
-    bias         = Parameter(norm_shape, init=0)
-    run_mean     = Constant(0, shape=norm_shape)  # note: these are not really constants; they are updated differently
-    run_variance = Constant(0, shape=norm_shape)
+    scale        = Parameter(norm_shape, init=init_scale, name=name+'.scale')
+    bias         = Parameter(norm_shape, init=0, name=name+'.bias')
+    run_mean     = Constant(0, shape=norm_shape, name=name+'.run_mean')  # note: these are not really constants; they are updated differently
+    run_variance = Constant(0, shape=norm_shape, name=name+'.run_variance')
 
     # expression
-    x = Placeholder(name='batch_normalization_arg')
+    x = Placeholder(name=name+'.arg')
     apply_x = batch_normalization(x, scale, bias, run_mean, run_variance, map_rank == 1, normalization_time_constant=normalization_time_constant, blend_time_constant=blend_time_constant, epsilon=epsilon,
-                                  #use_cntk_engine=use_cntk_engine)
-                                  use_cudnn_engine=not use_cntk_engine)
+                                  use_cudnn_engine=not use_cntk_engine, name=name)
     return Block(apply_x, 'BatchNormalization', Record(scale=scale, bias=bias, mean=run_mean, variance=run_variance))
 
 # LayerNormalization -- create a layer-normalization layer
-def LayerNormalization(initial_scale=1, initial_bias=0):
+# name: name of the output node
+def LayerNormalization(initial_scale=1, initial_bias=0, name='LayerNormalization'):
     UntestedBranchError("LayerNormalization")
 
     # parameters bound to this Function
-    scale = Parameter((1), init=initial_scale)  # TODO: offer Softplus version for protection, as for Stabilizer
-    bias  = Parameter((1), init=initial_bias)
+    scale = Parameter((1), init=initial_scale, name=name+'.scale')  # TODO: offer Softplus version for protection, as for Stabilizer
+    bias  = Parameter((1), init=initial_bias, name=name+'.bias')
 
     # expression
-    x = Placeholder(name='layer_normalization_arg')
+    x = Placeholder(name=name+'.arg')
     mean = reduce_mean (x) # normalize w.r.t. actual sample statistics
     x0 = x - mean;
     std = sqrt (reduce_mean (x0 * x0))
     #x_hat = element_divide (x0, std)
     x_hat = x0 / std
-    apply_x = x_hat * scale + bias    # denormalize with learned parameters
+    apply_x = x_hat * scale
+    apply_x = plus(apply_x, bias, name=name)   # denormalize with learned parameters
     return Block(apply_x, 'LayerNormalization', Record(scale=scale, bias=bias))
