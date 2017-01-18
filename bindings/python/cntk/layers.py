@@ -25,6 +25,8 @@ from cntk.cntk_py import allow_renaming_functions
 from .blocks import _get_current_default_options, _is_given, _initializer_for, _resolve_activation, _INFERRED
 
 # Allow node renaming so we can add name to layer nodes 
+# BUGBUG: For node naming, currently it is a workaround before we are able to name Block. "allow_renaming_functions" should
+# be removed in the future. 
 allow_renaming_functions()
 
 # Dense -- create a fully-connected linear projection layer with optional non-linear activation
