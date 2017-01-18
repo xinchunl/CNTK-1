@@ -81,13 +81,10 @@ def Dense(shape, init=init_default_or_glorot_uniform,
     if b:
         apply_x = apply_x + b
 
-    # to rename, must overwrite the name of apply_x.root_function
-    if activation is None: 
-        apply_x.root_function.name = name
-    else: 
-        apply_x.root_function.name = name + '.proj'
-        apply_x = apply_x >> activation
-        apply_x.root_function.name = name
+    # to rename, must change root_function.name instead of the box name 
+    apply_x.root_function.name = name + '.proj'
+    apply_x = apply_x >> activation
+    apply_x.root_function.name = name
     return Block(apply_x, "Dense", Record(W=W, b=b))
 
 # Embedding -- create a linear embedding layer
@@ -187,12 +184,10 @@ def Convolution(filter_shape,        # e.g. (3,3)
     if bias: 
         apply_x = apply_x + b
 
-    if activation is None: 
-        apply_x.root_function.name = name
-    else: 
-        apply_x.root_function.name = name + '.proj'
-        apply_x = apply_x >> activation
-        apply_x.root_function.name = name
+    # to rename, must change root_function.name instead of the box name 
+    apply_x.root_function.name = name + '.proj'
+    apply_x = apply_x >> activation
+    apply_x.root_function.name = name
     return Block(apply_x, "Convolution", Record(W=W, b=b))
 
 # Create a Pooling layer with one of following types:
