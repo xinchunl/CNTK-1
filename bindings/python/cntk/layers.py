@@ -11,7 +11,7 @@
 from __future__ import division
 import numpy as np
 from .ops import parameter, input_variable, placeholder_variable, combine
-from .ops import times, plus, convolution, pooling, batch_normalization, dropout
+from .ops import times, convolution, pooling, batch_normalization, dropout
 from .utils.debughelpers import _name_node, _node_name, _node_description, _log_node
 from .utils import Record, _as_tuple
 from .blocks import *  # TODO: reduce to what we actually use
@@ -79,7 +79,7 @@ def Dense(shape, init=init_default_or_glorot_uniform,
     x = Placeholder(name=name+'.arg')
     apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map)
     if b:
-        apply_x = plus(apply_x, b)
+        apply_x = apply_x + b
 
     # to rename, must overwrite the name of apply_x.root_function
     if activation is None: 
@@ -339,5 +339,6 @@ def LayerNormalization(initial_scale=1, initial_bias=0, name='LayerNormalization
     #x_hat = element_divide (x0, std)
     x_hat = x0 / std
     apply_x = x_hat * scale
-    apply_x = plus(apply_x, bias, name=name)   # denormalize with learned parameters
+    apply_x = apply_x + bias    # denormalize with learned parameters
+    apply_x.root_function.name = name
     return Block(apply_x, 'LayerNormalization', Record(scale=scale, bias=bias))
