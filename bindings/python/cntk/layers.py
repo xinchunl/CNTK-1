@@ -185,7 +185,7 @@ def Convolution(filter_shape,        # e.g. (3,3)
         apply_x = apply_x + b
 
     # to rename, must change root_function.name instead of the box name 
-    apply_x.root_function.name = name + '.proj'
+    apply_x.root_function.name = name + '.conv'
     apply_x = apply_x >> activation
     apply_x.root_function.name = name
     return Block(apply_x, "Convolution", Record(W=W, b=b))
@@ -333,7 +333,6 @@ def LayerNormalization(initial_scale=1, initial_bias=0, name='LayerNormalization
     std = sqrt (reduce_mean (x0 * x0))
     #x_hat = element_divide (x0, std)
     x_hat = x0 / std
-    apply_x = x_hat * scale
-    apply_x = apply_x + bias    # denormalize with learned parameters
+    apply_x = x_hat * scale + bias    # denormalize with learned parameters
     apply_x.root_function.name = name
     return Block(apply_x, 'LayerNormalization', Record(scale=scale, bias=bias))
