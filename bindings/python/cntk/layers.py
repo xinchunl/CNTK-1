@@ -19,11 +19,13 @@ from .blocks import _trace_layers  # (debugging)
 
 from .ops.functions import Function
 from .ops.variables import Variable
+from cntk.cntk_py import allow_renaming_functions
 
 # this is what we initialize weight matrices from by default
 from .blocks import _get_current_default_options, _is_given, _initializer_for, _resolve_activation, _INFERRED
 
-# BUGBUG: For node naming, currently it is a workaround before we are able to name Block. 
+# Allow node renaming so we can add name to layer nodes 
+allow_renaming_functions()
 
 # Dense -- create a fully-connected linear projection layer with optional non-linear activation
 # Note: shape may describe a tensor as well.
@@ -75,12 +77,17 @@ def Dense(shape, init=init_default_or_glorot_uniform,
 
     # expression of this function
     x = Placeholder(name=name+'.arg')
+    apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map)
     if b:
-        apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map)
-        apply_x = plus(apply_x, b, name=name)
+        apply_x = plus(apply_x, b)
+
+    # to rename, must overwrite the name of apply_x.root_function
+    if activation is None: 
+        apply_x.root_function.name = name
     else: 
-        apply_x = times(x, W, output_rank=output_rank, infer_input_rank_to_map=infer_input_rank_to_map, name=name)
-    apply_x = apply_x >> activation
+        apply_x.root_function.name = name + '.proj'
+        apply_x = apply_x >> activation
+        apply_x.root_function.name = name
     return Block(apply_x, "Dense", Record(W=W, b=b))
 
 # Embedding -- create a linear embedding layer
@@ -170,25 +177,22 @@ def Convolution(filter_shape,        # e.g. (3,3)
     # expression
     x = Placeholder(name=name+'.arg')
     # TODO: update the parameter order of convolution() to match the optional ones as in here? (options order matches Keras)
+    apply_x = convolution (W, x,
+                           strides=_as_tuple(strides),
+                           sharing=_as_tuple(sharing),
+                           auto_padding=_as_tuple(pad),
+                           # TODO: can we rename auto_padding to pad?
+                           transpose=transpose,
+                           max_temp_mem_size_in_samples=max_temp_mem_size_in_samples)
     if bias: 
-        apply_x = convolution (W, x,
-                               strides=_as_tuple(strides),
-                               sharing=_as_tuple(sharing),
-                               auto_padding=_as_tuple(pad),
-                               # TODO: can we rename auto_padding to pad?
-                               transpose=transpose,
-                               max_temp_mem_size_in_samples=max_temp_mem_size_in_samples)
-        apply_x = plus(apply_x, b, name=name)
+        apply_x = apply_x + b
+
+    if activation is None: 
+        apply_x.root_function.name = name
     else: 
-        apply_x = convolution (W, x,
-                               strides=_as_tuple(strides),
-                               sharing=_as_tuple(sharing),
-                               auto_padding=_as_tuple(pad),
-                               # TODO: can we rename auto_padding to pad?
-                               transpose=transpose,
-                               max_temp_mem_size_in_samples=max_temp_mem_size_in_samples, 
-                               name=name)
-    apply_x = apply_x >> activation
+        apply_x.root_function.name = name + '.proj'
+        apply_x = apply_x >> activation
+        apply_x.root_function.name = name
     return Block(apply_x, "Convolution", Record(W=W, b=b))
 
 # Create a Pooling layer with one of following types:
@@ -264,7 +268,8 @@ def Recurrence(over, go_backwards=False, initial_state=initial_state_default_or_
     if _trace_layers:
         _log_node(h)
         _log_node(combine([h.owner]))
-    apply_x = combine([h], name=name)     # the Function that yielded 'h', so we get to know its inputs
+    apply_x = combine([h])     # the Function that yielded 'h', so we get to know its inputs
+    apply_x.root_function.name = name
     # apply_x is a Function x -> h
     return Block(apply_x, 'Recurrence', Record(over=over))
 
