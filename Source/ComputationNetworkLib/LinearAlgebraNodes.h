@@ -313,30 +313,35 @@ protected:
 
 private:
     // Check if TimesNodeBase could be simplified to ElementTimes to avoid unroll when:
-    // 1. input0: DENSE, is rank-1 and transposed, or is rank-2 with Dim(0)==1
-    // 2. input1: DENSE, is rank-1
+    // 1. input0: is rank-1 and transposed, or is rank-2 with Dim(0)==1
+    // 2. input1: is rank-1
     // 3. output: rank-1 and reduced to a scalar (Dim(0)==1)
-    // NOTE we might relax the condition on DENSE when ElementTimes support sparse in future
-    bool IsReduceableDotProduct(const FrameRange& fr)
+    // 4. input0 and input1 are not both sparse
+    bool IsReduceableDotProduct(const FrameRange& fr, bool& input0Sparse, bool& input1Sparse)
     {
         const auto& shape0   = InputRef(0).GetSampleLayout();
         const auto& shape1   = InputRef(1).GetSampleLayout();
         const auto& shapeOut =             GetSampleLayout();
 
+        input0Sparse = (InputRef(0).Value().GetMatrixType() == DENSE);
+        input1Sparse = (InputRef(1).Value().GetMatrixType() == DENSE);
+
         bool input0_ok =
-            ((shape0.GetRank() == 1 && m_transpose) ||
-             (shape0.GetRank() == 2 && shape0.GetDim(0) == 1)) &&
-            (InputRef(0).Value().GetMatrixType() == DENSE); // TODO: add support in ElementTimes for sparse and remove this limitation
+            (shape0.GetRank() == 1 && m_transpose) ||
+            (shape0.GetRank() == 2 && shape0.GetDim(0) == 1);
 
         bool input1_ok =
-            (shape1.GetRank() == 1) &&
-            (InputRef(1).Value().GetMatrixType() == DENSE);
+            (shape1.GetRank() == 1);
 
         bool outputScalar =
             (shapeOut.GetRank() == 1) &&
             (shapeOut.GetDim(0) == 1);
 
-        return input0_ok && input1_ok && outputScalar;
+        // now cuSparse only supports dot(dense, sparse) so fall back to unroll when both are sparse
+        bool notBothSparse =
+            !(input0Sparse || input1Sparse);
+
+        return input0_ok && input1_ok && outputScalar && notBothSparse;
     }
 
 public:
@@ -347,9 +352,17 @@ public:
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
             // speed up using ElementTimes to avoid unroll if possible
-            if (IsReduceableDotProduct(fr))
+            bool input0Sparse, input1Sparse;
+            if (IsReduceableDotProduct(fr, input0Sparse, input1Sparse))
             {
-                ElementTimesNode<ElemType>::ForwardPropImpl(*this, fr, false/*allowBroadcast*/);
+                if (input0Sparse || input1Sparse)
+                {
+                    Value().SetValue(Matrix<ElemType>::InnerProductOfMatrices(InputRef(0).ValueFor(fr), InputRef(1).ValueFor(fr)));
+                }
+                else
+                {
+                    ElementTimesNode<ElemType>::ForwardPropImpl(*this, fr, false/*allowBroadcast*/);
+                }
                 return;
             }
 
@@ -377,9 +390,26 @@ public:
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
             // speed up using ElementTimes to avoid unroll if possible
-            if (IsReduceableDotProduct(fr))
+            bool input0Sparse, input1Sparse;
+            if (IsReduceableDotProduct(fr, input0Sparse, input1Sparse))
             {
-                ElementTimesNode<ElemType>::BackpropToImpl(*this, inputIndex, fr, false/*allowBroadcast*/);
+                if (input0Sparse || input1Sparse)
+                {
+                    Matrix<ElemType> otherValue = InputRef(1 - inputIndex).ValueFor(fr);
+                    Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
+                    Matrix<ElemType> thisGradient = GradientFor(fr);
+
+                    Matrix<ElemType>::Multiply1x1AndWeightedAdd(
+                        (ElemType)(-1),
+                        thisGradient /*1x1*/,
+                        otherValue,
+                        Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0 : (ElemType)1,
+                        inputGradient);
+                }
+                else
+                {
+                    ElementTimesNode<ElemType>::BackpropToImpl(*this, inputIndex, fr, false/*allowBroadcast*/);
+                }
                 return;
             }
 
