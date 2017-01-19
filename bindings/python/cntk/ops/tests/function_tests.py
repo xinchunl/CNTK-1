@@ -139,8 +139,8 @@ def test_set_name():
 
     x_plus_y_2 = plus(x, y, name='x_plus_y_2')
     assert (x_plus_y_2.name == 'x_plus_y_2')
-    with pytest.raises(ValueError):
-        x_plus_y_2.name = 'x_plus_y_2_new'
+#    with pytest.raises(ValueError):
+#        x_plus_y_2.name = 'x_plus_y_2_new'
 
     from ... import cntk_py
     cntk_py.allow_renaming_functions()
