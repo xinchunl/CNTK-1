@@ -319,15 +319,15 @@ private:
     // 1. input0: is rank-1 and transposed, or is rank-2 with Dim(0)==1
     // 2. input1: is rank-1
     // 3. output: rank-1 and reduced to a scalar (Dim(0)==1)
-    // 4. input0 and input1 are not both sparse
-    bool IsReduceableDotProduct(const FrameRange& fr, bool& input0Sparse, bool& input1Sparse)
+    // 4. fr.IsAllFrames() and m_transpose (InnerProduct), or both input being dense
+    bool IsReduceableDotProduct(const FrameRange& fr, bool& hasSparse)
     {
         const auto& shape0   = InputRef(0).GetSampleLayout();
         const auto& shape1   = InputRef(1).GetSampleLayout();
         const auto& shapeOut =             GetSampleLayout();
 
-        input0Sparse = (InputRef(0).Value().GetMatrixType() == DENSE);
-        input1Sparse = (InputRef(1).Value().GetMatrixType() == DENSE);
+        bool input0Sparse = (InputRef(0).Value().GetMatrixType() != DENSE);
+        bool input1Sparse = (InputRef(1).Value().GetMatrixType() != DENSE);
 
         bool input0_ok =
             (shape0.GetRank() == 1 && m_transpose) ||
@@ -340,11 +340,11 @@ private:
             (shapeOut.GetRank() == 1) &&
             (shapeOut.GetDim(0) == 1);
 
-        // now cuSparse only supports dot(dense, sparse) so fall back to unroll when both are sparse
-        bool notBothSparse =
-            !(input0Sparse || input1Sparse);
+        bool notBothSparse = !(input0Sparse && input1Sparse);
 
-        return input0_ok && input1_ok && outputScalar && notBothSparse;
+        hasSparse = (input0Sparse || input1Sparse);
+        
+        return input0_ok && input1_ok && outputScalar && notBothSparse && ((fr.IsAllFrames() && m_transpose) || !hasSparse);
     }
 
 public:
@@ -355,12 +355,22 @@ public:
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
             // speed up using ElementTimes to avoid unroll if possible
-            bool input0Sparse, input1Sparse;
-            if (IsReduceableDotProduct(fr, input0Sparse, input1Sparse))
+            bool hasSparse;
+            if (IsReduceableDotProduct(fr, hasSparse))
             {
-                if (input0Sparse || input1Sparse)
+                if (hasSparse)
                 {
-                    Value().SetValue(Matrix<ElemType>::InnerProductOfMatrices(InputRef(0).ValueFor(fr), InputRef(1).ValueFor(fr)));
+                    Matrix<ElemType>& value =              Value();
+                    Matrix<ElemType>& input0 = InputRef(0).Value();
+                    Matrix<ElemType>& input1 = InputRef(1).Value();
+                    if (input0.GetMatrixType() == SPARSE)
+                    {
+                        Matrix<ElemType>::InnerProduct(input0, input1, value, true);
+                    }
+                    else
+                    {
+                        Matrix<ElemType>::InnerProduct(input1, input0, value, true);
+                    }
                 }
                 else
                 {
@@ -393,27 +403,14 @@ public:
         if (!fr.IsOneColumnWrt(InputRef(0).GetMBLayout()))
         {
             // speed up using ElementTimes to avoid unroll if possible
-            bool input0Sparse, input1Sparse;
-            if (IsReduceableDotProduct(fr, input0Sparse, input1Sparse))
+            bool hasSparse;
+            if (IsReduceableDotProduct(fr, hasSparse))
             {
-                if (input0Sparse || input1Sparse)
-                {
-                    Matrix<ElemType> otherValue = InputRef(1 - inputIndex).ValueFor(fr);
-                    Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
-                    Matrix<ElemType> thisGradient = GradientFor(fr);
-
-                    Matrix<ElemType>::Multiply1x1AndWeightedAdd(
-                        (ElemType)(-1),
-                        thisGradient /*1x1*/,
-                        otherValue,
-                        Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0 : (ElemType)1,
-                        inputGradient);
-                }
-                else
+                if (!hasSparse)
                 {
                     ElementTimesNode<ElemType>::BackpropToImpl(*this, inputIndex, fr, false/*allowBroadcast*/);
+                    return;
                 }
-                return;
             }
 
             auto timeRange     = fr.GetTimeRange();

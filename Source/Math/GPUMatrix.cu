@@ -3848,7 +3848,7 @@ void GPUMatrix<ElemType>::InnerProduct(const GPUMatrix<ElemType>& a, const GPUMa
     else
         c.RequireSize(m, 1);
 
-    if ((isColWise && m == 1) || !isColWise && n == 1) // in this case it's equivalent to element-wise product
+    if ((isColWise && m == 1) || (!isColWise && n == 1)) // in this case it's equivalent to element-wise product
     {
         c.AssignElementProductOf(a, b);
     }

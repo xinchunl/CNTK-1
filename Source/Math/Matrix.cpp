@@ -5132,17 +5132,14 @@ void Matrix<ElemType>::InnerProduct(const Matrix<ElemType>& a, const Matrix<Elem
 
     DecideAndMoveToRightDevice(a, b, c);
 
-    if (a.GetMatrixType() != b.GetMatrixType())
-        NOT_IMPLEMENTED;
+    c.SwitchToMatrixType(b.GetMatrixType(), b.GetFormat(), false);
 
-    c.SwitchToMatrixType(a.GetMatrixType(), a.GetFormat(), false);
-
-    DISPATCH_MATRIX_ON_FLAG(&c,
-                            &c,
+    DISPATCH_MATRIX_ON_FLAG(&a,
+                            &a,
                             CPUMatrix<ElemType>::InnerProduct(*a.m_CPUMatrix, *b.m_CPUMatrix, *c.m_CPUMatrix, isColWise),
                             GPUMatrix<ElemType>::InnerProduct(*a.m_GPUMatrix, *b.m_GPUMatrix, *c.m_GPUMatrix, isColWise),
                             NOT_IMPLEMENTED,
-                            NOT_IMPLEMENTED);
+                            GPUSparseMatrix<ElemType>::InnerProduct(*a.m_GPUSparseMatrix, *b.m_GPUMatrix, *c.m_GPUMatrix, isColWise));
 }
 
 template <class ElemType>
