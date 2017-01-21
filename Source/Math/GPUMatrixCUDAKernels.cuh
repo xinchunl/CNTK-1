@@ -2339,7 +2339,7 @@ __global__ void _innerProduct4SparseCSC(
     {
         for (CUDA_LONG i = aColCSCIndex[id]; i < aColCSCIndex[id+1]; i++)
         {
-            index = IDX2C(i, id, M);
+            index = IDX2C(aRowIndex[i], id, M);
             sum += a[i] * b[index];
         }
     }
@@ -2347,12 +2347,12 @@ __global__ void _innerProduct4SparseCSC(
     {
         for (CUDA_LONG j = 0; j < N; ++j)
         {
-            for (CUDA_LONG i = max(id, aColCSCIndex[j]); i < min(id, aColCSCIndex[j+1]); i++)
+            for (CUDA_LONG i = aColCSCIndex[j]; i < aColCSCIndex[j+1]; i++)
             {
-                if (i == id)
+                if (aRowIndex[i] == id)
                 {
                     index = IDX2C(id, j, M);
-                    sum += a[index] * b[index];
+                    sum += a[i] * b[index];
                     break;
                 }
             }

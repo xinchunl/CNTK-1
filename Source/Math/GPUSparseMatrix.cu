@@ -2121,17 +2121,15 @@ void GPUSparseMatrix<ElemType>::InnerProduct(const GPUSparseMatrix<ElemType>& a,
     int blocksPerGrid = 0;
     if (isColWise) // col-wise
     {
-        c.RequireSize(1, n);
         blocksPerGrid = (int)ceil(1.0 * n / GridDim::maxThreadsPerBlock);
     }
     else
     {
-        c.RequireSize(m, 1);
         blocksPerGrid = (int)ceil(1.0 * m / GridDim::maxThreadsPerBlock);
     }
 
     SyncGuard syncGuard;
-    _innerProduct4SparseCSC<ElemType> << <blocksPerGrid, GridDim::maxThreadsPerBlock, 0, t_stream >> >(
+    _innerProduct4SparseCSC<ElemType><<<blocksPerGrid, GridDim::maxThreadsPerBlock, 0, t_stream>>>(
         c.Data(),
         a.Data(), a.RowLocation(), a.ColLocation(),
         b.Data(),
