@@ -405,18 +405,15 @@ public:
             {
                 if (hasSparse)
                 {
-                    if (InputRef(inputIndex).NeedsGradient())
-                    {
-                        Matrix<ElemType> gradient = GradientFor(fr);
-                        Matrix<ElemType> inputValue = InputRef(1 - inputIndex).ValueFor(fr);
-                        Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
-                        Matrix<ElemType> gradientDiagnal(gradient.GetNumCols(), gradient.GetNumCols(), gradient.GetDeviceId());
-                        gradientDiagnal.SetDiagonalValue(gradient);
-                        Matrix<ElemType>::MultiplyAndWeightedAdd(
-                            (ElemType)1.0, inputValue, false, gradientDiagnal, true,
-                            Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0.0 : (ElemType)1.0,
-                            inputGradient);
-                    }
+                    Matrix<ElemType> gradient = GradientFor(fr);
+                    Matrix<ElemType> inputValue = InputRef(1 - inputIndex).ValueFor(fr);
+                    Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
+                    Matrix<ElemType> gradientDiagnal(gradient.GetNumCols(), gradient.GetNumCols(), gradient.GetDeviceId());
+                    gradientDiagnal.SetDiagonalValue(gradient);
+                    Matrix<ElemType>::MultiplyAndWeightedAdd(
+                        (ElemType)1.0, inputValue, false, gradientDiagnal, true,
+                        Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0.0 : (ElemType)1.0,
+                        inputGradient);
                 }
                 else
                 {
