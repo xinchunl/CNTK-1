@@ -344,7 +344,7 @@ private:
 
         hasSparse = (input0Sparse || input1Sparse);
         
-        return input0_ok && input1_ok && outputScalar && notBothSparse && ((fr.IsAllFrames() && m_transpose) || !hasSparse);
+        return input0_ok && input1_ok && outputScalar && notBothSparse && (m_transpose || !hasSparse);
     }
 
 public:
@@ -358,19 +358,16 @@ public:
             bool hasSparse;
             if (IsReduceableDotProduct(fr, hasSparse))
             {
+                // for sparse transposed, use InnerProduct
                 if (hasSparse)
                 {
-                    Matrix<ElemType>& value =              Value();
-                    Matrix<ElemType>& input0 = InputRef(0).Value();
-                    Matrix<ElemType>& input1 = InputRef(1).Value();
+                    Matrix<ElemType> value  =             ValueFor(fr);
+                    Matrix<ElemType> input0 = InputRef(0).ValueFor(fr);
+                    Matrix<ElemType> input1 = InputRef(1).ValueFor(fr);
                     if (input0.GetMatrixType() == SPARSE)
-                    {
                         Matrix<ElemType>::InnerProduct(input0, input1, value, true);
-                    }
                     else
-                    {
                         Matrix<ElemType>::InnerProduct(input1, input0, value, true);
-                    }
                 }
                 else
                 {
@@ -406,11 +403,26 @@ public:
             bool hasSparse;
             if (IsReduceableDotProduct(fr, hasSparse))
             {
-                if (!hasSparse)
+                if (hasSparse)
+                {
+                    if (InputRef(inputIndex).NeedsGradient())
+                    {
+                        Matrix<ElemType> gradient = GradientFor(fr);
+                        Matrix<ElemType> inputValue = InputRef(1 - inputIndex).ValueFor(fr);
+                        Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
+                        Matrix<ElemType> gradientDiagnal(gradient.GetNumCols(), gradient.GetNumCols(), gradient.GetDeviceId());
+                        gradientDiagnal.SetDiagonalValue(gradient);
+                        Matrix<ElemType>::MultiplyAndWeightedAdd(
+                            (ElemType)1.0, inputValue, false, gradientDiagnal, true,
+                            Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0.0 : (ElemType)1.0,
+                            inputGradient);
+                    }
+                }
+                else
                 {
                     ElementTimesNode<ElemType>::BackpropToImpl(*this, inputIndex, fr, false/*allowBroadcast*/);
-                    return;
                 }
+                return;
             }
 
             auto timeRange     = fr.GetTimeRange();
