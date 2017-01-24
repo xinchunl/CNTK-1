@@ -5132,6 +5132,9 @@ void Matrix<ElemType>::InnerProduct(const Matrix<ElemType>& a, const Matrix<Elem
 
     DecideAndMoveToRightDevice(a, b, c);
 
+    if (b.GetMatrixType() != DENSE) // only support a being sparse/dense. Both b and c should be dense
+        NOT_IMPLEMENTED;
+
     c.SwitchToMatrixType(b.GetMatrixType(), b.GetFormat(), false);
 
     DISPATCH_MATRIX_ON_FLAG(&a,

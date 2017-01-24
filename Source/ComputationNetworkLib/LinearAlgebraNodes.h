@@ -319,7 +319,7 @@ private:
     // 1. input0: is rank-1 and transposed, or is rank-2 with Dim(0)==1
     // 2. input1: is rank-1
     // 3. output: rank-1 and reduced to a scalar (Dim(0)==1)
-    // 4. fr.IsAllFrames() and m_transpose (InnerProduct), or both input being dense
+    // 4. m_transpose (becomes Matrix::InnerProduct), or both input being dense
     bool IsReduceableDotProduct(const FrameRange& fr, bool& hasSparse)
     {
         const auto& shape0   = InputRef(0).GetSampleLayout();
@@ -365,9 +365,9 @@ public:
                     Matrix<ElemType> input0 = InputRef(0).ValueFor(fr);
                     Matrix<ElemType> input1 = InputRef(1).ValueFor(fr);
                     if (input0.GetMatrixType() == SPARSE)
-                        Matrix<ElemType>::InnerProduct(input0, input1, value, true);
+                        Matrix<ElemType>::InnerProduct(input0, input1, value, true/*isColWise*/);
                     else
-                        Matrix<ElemType>::InnerProduct(input1, input0, value, true);
+                        Matrix<ElemType>::InnerProduct(input1, input0, value, true/*isColWise*/);
                 }
                 else
                 {
@@ -408,10 +408,10 @@ public:
                     Matrix<ElemType> gradient = GradientFor(fr);
                     Matrix<ElemType> inputValue = InputRef(1 - inputIndex).ValueFor(fr);
                     Matrix<ElemType> inputGradient = InputRef(inputIndex).GradientFor(fr);
-                    Matrix<ElemType> gradientDiagnal(gradient.GetNumCols(), gradient.GetNumCols(), gradient.GetDeviceId());
-                    gradientDiagnal.SetDiagonalValue(gradient);
+                    Matrix<ElemType> gradientDiagonal(gradient.GetNumCols(), gradient.GetNumCols(), gradient.GetDeviceId());
+                    gradientDiagonal.SetDiagonalValue(gradient);
                     Matrix<ElemType>::MultiplyAndWeightedAdd(
-                        (ElemType)1.0, inputValue, false, gradientDiagnal, true,
+                        (ElemType)1.0, inputValue, false, gradientDiagonal, true,
                         Input(inputIndex)->ParentOverwritesGradient() ? (ElemType)0.0 : (ElemType)1.0,
                         inputGradient);
                 }
