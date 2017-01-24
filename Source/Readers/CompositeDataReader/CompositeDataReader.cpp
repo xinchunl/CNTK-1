@@ -117,8 +117,20 @@ CompositeDataReader::CompositeDataReader(const ConfigParameters& config) :
 
         randomizationWindow = config(L"randomizationWindow", randomizationWindow);
 
+        bool sampleBasedRandomizationWindow = config(L"sampleBasedRandomizationWindow", true);
+
+        if (!config.ExistsCurrent(L"randomizationWindow") && // randomization window is not specified
+            !config.ExistsCurrent(L"sampleBasedRandomizationWindow") && // sampleBasedRandomizationWindow is not specified
+            ContainsDeserializer(config, L"CNTKTextFormatDeserializer"))
+        {
+            size_t chunkSizeBytes = config(L"chunkSizeInBytes", 32 * 1024 * 1024); // 32 MB by default
+            randomizationWindow = (4 << 30) / chunkSizeBytes; // ~ 4 GB  
+            // TODO: decrease randomization window if m_deserializers.size() > 1 ?
+        }
+
         bool shouldPrefetch = true;
-        m_sequenceEnumerator = std::make_shared<BlockRandomizer>(verbosity, randomizationWindow, deserializer, shouldPrefetch, multiThreadedDeserialization, maxErrors);
+        m_sequenceEnumerator = std::make_shared<BlockRandomizer>(verbosity, randomizationWindow, deserializer, shouldPrefetch, 
+            multiThreadedDeserialization, maxErrors, sampleBasedRandomizationWindow);
     }
     else
     {
