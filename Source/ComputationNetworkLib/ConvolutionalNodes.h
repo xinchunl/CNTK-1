@@ -290,6 +290,7 @@ public:
     {
         Base::Save(fstream);
         fstream << m_convolution2D;
+        TensorShape(1).Save(fstream); // Write out a dummy tensor, so that model created can be used later after implementing reading this tensor in this model version
     }
 
     void Load(File& fstream, size_t modelVersion) override
@@ -325,6 +326,12 @@ public:
         else
         {
             fstream >> m_convolution2D;
+            if (modelVersion >= CNTK_MODEL_VERSION_18)
+            {
+                TensorShape dummyTensorHolder;
+                dummyTensorHolder.Load(fstream);
+                if(dummyTensorHolder!=TensorShape(1)) LogicError("Loading tensor that is currently not supported.");
+            }
         }
     }
 
@@ -908,8 +915,16 @@ public:
 
         // Same as in case of deconvolution, node input (inputShape) is really the output of the max pooling
         // and node output (outDims) is pooling input.
-        auto outputShape = ConvolveGeometry::ComputeInputShape(inputShape, m_kernelShape, m_mapCount, m_stride,
+        auto outputShape = GetInputSampleLayout(1);
+        auto inferredShape = ConvolveGeometry::ComputeOutputShape(outputShape, m_kernelShape, m_mapCount, m_stride,
                                                                m_sharing, m_autoPad, m_lowerPad, m_upperPad);
+        if (inputShape != inferredShape)
+            InvalidArgument("%ls %ls the shape of the unpooling operand %ls is different from "
+                            "the result of pooling the poolingInput argument using"
+                            "the provided options %ls", NodeName().c_str(), OperationName().c_str(), 
+                            static_cast<std::wstring>(inputShape).c_str(), 
+                            static_cast<std::wstring>(inferredShape).c_str());
+
         SetDims(outputShape, HasMBLayout());
         if (isFinalValidationPass)
         {

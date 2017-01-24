@@ -21,6 +21,12 @@
 #include <initializer_list>
 #include "QuantizedOperations.h"
 
+// Forward declarations
+namespace CNTK
+{
+    class Value;
+}
+
 // This class is exported from the Math.dll
 namespace Microsoft { namespace MSR { namespace CNTK {
 
@@ -62,6 +68,8 @@ typedef std::shared_ptr<MatrixBase> MatrixBasePtr;
 template <class ElemType>
 class MATH_API Matrix : public MatrixBase
 {
+    friend class ::CNTK::Value;
+
     typedef MatrixBase Base;
 private:
     mutable BaseMatrix<ElemType>*                 m_baseMatrix;
@@ -198,13 +206,15 @@ public:
     Matrix<ElemType> Diagonal() const;
     void AssignDiagonalValuesTo(Matrix<ElemType>& diag) const;
 
-    // TODO: all these scalars should be passed as doubles and cast down inside
-    void NormalGrad(Matrix<ElemType>& gradients, Matrix<ElemType>& functionValues, const ElemType learnRatePerSample, const ElemType momentum, const bool useNAG);
+    void SGDUpdate(Matrix<ElemType>& gradients, ElemType learnRatePerSample);
+    void MomentumSGDUpdate(Matrix<ElemType>& gradients, Matrix<ElemType>& smoothedGradients, ElemType learnRatePerSample, ElemType momentum, bool unitGainMomentum = true);
+    void NesterovAcceleratedMomentumSGDUpdate(Matrix<ElemType>& gradients, Matrix<ElemType>& smoothedGradients, ElemType learnRatePerSample, ElemType momentum, bool unitGainMomentum = true);
+
     ElemType Adagrad(Matrix<ElemType>& gradients, const bool needAveMultiplier);
     void FSAdagradUpdate(size_t mbSize,
                          Matrix<ElemType>& gradients, Matrix<ElemType>& functionValues, double& smoothedCount,
                          const double learnRatePerSample, const double targetAdagradAvDenom,
-                         const double meanMomentum, const double varMomentum);
+                         const double meanMomentum, const double varMomentum, bool unitGainMomentum = true);
     ElemType RmsProp(Matrix<ElemType>& gradients, ElemType RMS_GAMMA, ElemType RMS_WGT_INC, ElemType RMS_WGT_MAX, ElemType RMS_WGT_DEC, ElemType RMS_WGT_MIN, const bool needAveMultiplier);
 
     void Resize(const size_t numRows, const size_t numCols, const size_t numNZElemToReserve = 10000, bool growOnly = true); // by default we only reallocate if need to grow

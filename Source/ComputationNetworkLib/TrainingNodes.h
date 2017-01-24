@@ -11,7 +11,6 @@
 #include "InputAndParamNodes.h"
 #include "CPURNGHandle.h"
 
-
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #include <map>
@@ -722,10 +721,10 @@ public:
             InvalidArgument("%ls operation requires three inputs instead of %d.", NodeDescription().c_str(), (int)m_inputs.size());
 
         if (Input(0)->NeedsGradient() == true)
-            InvalidArgument("%ls %ls operation needs input type (no gradient) for the 1st input.", NodeName().c_str(), OperationName().c_str());
+            InvalidArgument("%ls %ls operation needs input type (no gradient) for gain input.", NodeName().c_str(), OperationName().c_str());
 
         if (Input(2)->NeedsGradient() == true)
-            InvalidArgument("%ls %ls operation needs input type (no gradient) for the 3rd input.", NodeName().c_str(), OperationName().c_str());
+            InvalidArgument("%ls %ls operation needs input type (no gradient) for group input.", NodeName().c_str(), OperationName().c_str());
 
         ValidateBinaryReduce(isFinalValidationPass);
     }
@@ -2610,11 +2609,13 @@ public:
         }
         if (inputIndex == SCALE) // derivative with respect to the scale, precomputed during input derivative computation
         {
+            // Derivative with respect to the scale was precomputed during input derivative computation.
             assert(m_gradientValid);
             Input(SCALE)->Gradient() += *m_dScale;
         }
         else if (inputIndex == BIAS) // derivative with respect to the bias, precomputed during input derivative computation
         {
+            // Derivative with respect to the bias was precomputed during input derivative computation.
             assert(m_gradientValid);
             Input(BIAS)->Gradient() += *m_dBias;
         }
@@ -2664,6 +2665,11 @@ public:
 
         if (isFinalValidationPass)
         {
+            // The current implementation requires that the gradient of the first operand/input be computed
+            // in order to compute gradients for the bias and scale parameters (2nd and 3rd inputs)
+            if (Environment().IsTraining() && ((Input(1)->NeedsGradient() || Input(2)->NeedsGradient()) && !Input(0)->NeedsGradient()))
+                InvalidArgument("%ls %ls currently supports learnable scale and bias parameters only if the first input also needs gradient (i.e. is dependent on at-least one learnable parameter).", NodeName().c_str(), OperationName().c_str());
+
             if (m_convertRunningVariancePending)
             {
                 // Prior to CNTK CuDNN v5 support (and the CNTK engine of the same time), mean and inverse standard deviation
@@ -2712,6 +2718,29 @@ public:
                     "Please specify imageLayout=\"cudnn\" in BatchNormalization node in your NDL/BrainScript "
                     "and make sure your input data layout is CHW", NodeName().c_str(), OperationName().c_str());
             }
+
+            if (!m_useCntkEngine)
+            {
+                // Fallback to cntk engine on CPU device if cuDnn is not available,
+                bool cpuDevice = (m_deviceId == CPUDEVICE);
+
+                // or if parameters cannot be handled by cuDnn (which is needed for compatibility when changing the default to cudnn)
+                // In Source/Math/CuDnnBatchNormalization.cu :
+                //   if (blendFactor != 0 && (blendFactor != 1 || expAvgFactor > 0))
+                //      InvalidArgument("cuDNN batch normalization engine currently supports blendTimeConstant of 0 or 1 only.");
+                // Check ComputeBlendFactor()/ComputeExpAvgFactor() for inferring blendFactor/expAvgFactor from m_blendTimeConst/m_normTimeConst
+                bool cuDnnUnsupportedParams = (m_blendTimeConst != 0 && (isfinite(m_blendTimeConst) || isfinite(m_normTimeConst)));
+
+                if (cpuDevice || cuDnnUnsupportedParams)
+                {
+                    m_useCntkEngine = true;
+                    if (cuDnnUnsupportedParams)
+                    {
+                        fprintf(stderr, "\nWARNING: batch normalization falls back to cntk engine for parameters not supported by cuDnn.\n");
+                    }
+                }
+            }
+
             double cudnnMinEps = 1e-5; // CUDNN_BN_MIN_EPSILON
             if (!m_useCntkEngine && m_epsilon < cudnnMinEps) 
                 fprintf(stderr, "\nWARNING: cuDNN batch normalization requires epsilon >= %e. Epsilon will be reset to that value.\n", cudnnMinEps);

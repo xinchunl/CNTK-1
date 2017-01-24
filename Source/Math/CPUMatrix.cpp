@@ -21,6 +21,12 @@
 #include <thread>
 #include <iostream>
 #include <algorithm>
+#pragma warning(push)
+#pragma warning(disable:4244) // 'conversion' conversion from 'type1' to 'type2', possible loss of data
+#include <boost/random/normal_distribution.hpp>
+#pragma warning(pop)
+#include <boost/random/uniform_real_distribution.hpp>
+
 #ifdef _WIN32
 #define NOMINMAX
 #include "Windows.h"
@@ -958,7 +964,7 @@ void CPUMatrix<ElemType>::SetDiagonalValue(const CPUMatrix<ElemType>& vector)
 
     if (vector.GetNumElements() == 1) // reduce to simple form
         SetDiagonalValue(vector(0, 0));
-    else if (vector.GetNumRows() != GetNumRows())
+    else if (vector.GetNumRows() != GetNumRows() && vector.GetNumCols() != GetNumRows())
         LogicError("SetDiagonalValue: input vector's dimension does not agree with [this].");
     else
     {
@@ -1008,13 +1014,9 @@ void CPUMatrix<ElemType>::SetUniformRandomValue(const ElemType low, const ElemTy
     if (IsEmpty())
         LogicError("SetUniformRandomValue: Matrix is empty.");
 
-#ifdef _MSC_VER // TODO: check if available under GCC/Linux
-    std::ranlux64_base_01 generator;
+    std::mt19937_64 generator;
     generator.seed(seed == USE_TIME_BASED_SEED ? (unsigned long) time(NULL) : seed);
-#else
-    std::default_random_engine generator(seed);
-#endif
-    std::uniform_real_distribution<ElemType> r(low, high);
+    boost::random::uniform_real_distribution<ElemType> r(low, high);
 
     ElemType* bufPtr = Data();
     long m = (long) GetNumElements();
@@ -1043,13 +1045,10 @@ void CPUMatrix<ElemType>::SetGaussianRandomValue(const ElemType mean, const Elem
         LogicError("SetUniformRandomValue: Matrix is empty.");
 
     auto& us = *this;
-#ifdef _MSC_VER // TODO: check if available under GCC/Linux
-    std::ranlux64_base_01 generator;
-    generator.seed(seed == USE_TIME_BASED_SEED ? (unsigned long) time(NULL) : seed);
-#else
-    std::default_random_engine generator(seed);
-#endif
-    std::normal_distribution<ElemType> r(mean, sigma);
+
+    std::mt19937_64 generator(seed == USE_TIME_BASED_SEED ? (unsigned long) time(NULL) : seed);
+    boost::random::normal_distribution<ElemType> r(mean, sigma);
+
     // #pragma omp parallel for   // is it thread safe?
     foreach_coord (i, j, us)
     {
@@ -1067,13 +1066,10 @@ void CPUMatrix<ElemType>::AddGaussianRandomValue(const ElemType mean, const Elem
         LogicError("SetUniformRandomValue: Matrix is empty.");
 
     auto& us = *this;
-#ifdef _MSC_VER // TODO: check if available under GCC/Linux
-    std::ranlux64_base_01 generator;
+
+    std::mt19937_64 generator;
     generator.seed(seed == USE_TIME_BASED_SEED ? (unsigned long) time(NULL) : seed);
-#else
-    std::default_random_engine generator(seed);
-#endif
-    std::normal_distribution<ElemType> r(mean, sigma);
+    boost::random::normal_distribution<ElemType> r(mean, sigma);
 
     long m = (long) GetNumRows(), n = (long) GetNumCols();
     for (long j = 0; j < n; j++)
@@ -1106,8 +1102,7 @@ void CPUMatrix<ElemType>::SetUniformRandomMask(const ElemType maskRate, const El
     assert(cpuRNGHandle != nullptr);
 
     auto& us = *this;
-    std::uniform_real_distribution<ElemType> r(0, 1);
-
+    boost::random::uniform_real_distribution<ElemType> r(0, 1);
     long m = (long) GetNumRows(), n = (long) GetNumCols();
     ElemType v;
     for (long j = 0; j < n; j++)
@@ -1203,8 +1198,11 @@ void CPUMatrix<ElemType>::FSAdagrad(CPUMatrix<ElemType>& gradients,
                                     ElemType learnRatePerSample,
                                     ElemType momentum,
                                     ElemType adaWeight,
-                                    ElemType adaMul)
+                                    ElemType adaMul,
+                                    bool unitGainMomentum)
 {
+    auto unitGainFactor = ElemType(unitGainMomentum ? (1.0 - momentum) : 1.0);
+
     size_t numColsNeeded = 2 * gradients.GetNumCols();
 
     if (IsEmpty() || (GetNumCols() < numColsNeeded))
@@ -1239,7 +1237,7 @@ void CPUMatrix<ElemType>::FSAdagrad(CPUMatrix<ElemType>& gradients,
 
         if (momentum > 0.0f)
         {
-            g = momentum * smoothMom[i] + (1.0f - momentum) * g;
+            g = momentum * smoothMom[i] + unitGainFactor * g;
             smoothMom[i] = g;
         }
 

@@ -8,6 +8,7 @@
 #           e.g. a fully connected layer with non-linearity
 
 # TODO: clean up the dependencies
+from __future__ import division
 import numpy as np
 from .ops import parameter, input_variable, placeholder_variable, combine
 from .ops import times, convolution, pooling, batch_normalization, dropout
@@ -253,7 +254,7 @@ def Delay(T=1, initial_state=None):
     if T > 0:
         apply_x = past_value  (x, time_step=T, initial_state=initial_state)
     elif T < 0:
-        apply_x = future_value(x, time_step=T, initial_state=initial_state)
+        apply_x = future_value(x, time_step=-T, initial_state=initial_state)
     else:
         apply_x = x
     return Block(apply_x, 'Delay')
@@ -270,7 +271,7 @@ def Dropout(prob):
 def BatchNormalization(map_rank=None,  # if given then normalize only over this many dimensions. E.g. 1 to tie all (h,w) in a (C, H, W)-shaped input
                        init_scale=1,
                        normalization_time_constant=5000, blend_time_constant=0,
-                       epsilon=0.00001, use_cntk_engine=True):
+                       epsilon=0.00001, use_cntk_engine=False):
     # TODO: make map_rank a default option, once per-layer type defaults are implemented
 
     # parameters bound to this Function

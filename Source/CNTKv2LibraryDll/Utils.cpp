@@ -241,7 +241,7 @@ namespace CNTK
 
     template <typename T>
     TrainingParameterSchedule<T>::TrainingParameterSchedule(T value, UnitType unit) 
-        : m_schedule({ make_pair(0, value) }), m_unit(unit), m_epochSize(EntireSweep)
+        : m_schedule({ make_pair(0, value) }), m_unit(unit), m_epochSize(FullDataSweep)
     {
     }
 
@@ -268,13 +268,9 @@ namespace CNTK
     template <typename T>
     void TrainingParameterSchedule<T>::ConstructSchedule(const std::vector<std::pair<size_t, T>>& schedule)
     {
-        if (m_epochSize == EntireSweep)
-        {
-            //Sweep based schedules are currently not functional (learners don't have sweep info).
-            NOT_IMPLEMENTED;
-        }
-
-        const auto epochSize = (m_epochSize == EntireSweep) ? 1 : m_epochSize;
+        // In case of the FullDataSweep, the scheduling unit is just 1 sweep, 
+        // otherwise, it's the epoch size in samples.
+        const auto unitSize = (m_epochSize == FullDataSweep) ? 1 : m_epochSize;
 
         if (schedule.size() == 0)
             RuntimeError("TrainingParameterSchedule::ConstructSchedule : schedule is empty.");
@@ -288,7 +284,7 @@ namespace CNTK
                 RuntimeError("TrainingParameterSchedule::ConstructSchedule : unit count in the 'schedule' argument cannot be 0.");
 
             unitCount += (pair.first != 0) ? pair.first : 1;
-            m_schedule[epochSize * unitCount] = pair.second;
+            m_schedule[unitSize * unitCount] = pair.second;
         }
     }
 
@@ -456,6 +452,34 @@ namespace CNTK
 #endif
     }
 
+    std::pair<size_t, size_t> GetNumTimeStepsAndSequences(const NDShape& maskShape, size_t numDynamicAxes) 
+    {
+        size_t maxNumTimeSteps = 1;
+        size_t numSequences = 1;
+        if (maskShape.Rank() > 1)
+        {
+            // since only 2 axes are supported at the moment, sequence axis should be the first and batch axis -- the second.
+            // sequence axis dimension determines the maximum number of time steps (= maximum sequence length),
+            // batch axis dimension -- the number of sequences (= 'training units') in a batch.
+            maxNumTimeSteps = maskShape[0];
+            numSequences = maskShape[1];
+        }
+        else if (maskShape.Rank() > 0)
+        {
+            if (numDynamicAxes > 1)
+            {
+                maxNumTimeSteps = maskShape[0];
+            }
+            else
+            {
+                // there's only one axis (the default batch axis).
+                numSequences = maskShape[0];
+            }
+        }
+
+        return std::pair<size_t, size_t>(maxNumTimeSteps, numSequences);
+    }
+
     template <typename ElementType>
     std::pair<std::shared_ptr<const Matrix<ElementType>>, MBLayoutPtr> Utils::GetCNTKImplMatrixAndMBLayoutFromValueObject(const Variable& var, const ValuePtr& value)
     {
@@ -505,45 +529,18 @@ namespace CNTK
         auto mask = value->Mask();
         if ((mask != nullptr) && ((varShape.Rank() + mask->Shape().Rank()) != valueShape.Rank()))
             InvalidArgument("Invalid Value object; the sum of the rank of the mask and data does not equal the Variable's rank + number of dynamic axes");
-        
-        auto getNumTimeStepsAndSequencesFunc = [numDynamicAxes](const NDShape& maskShape, size_t numDynamicAxes) {
-            size_t maxNumTimeSteps = 1;
-            size_t numSequences = 1;
-            if (maskShape.Rank() > 1)
-            {
-                // since only 2 axes are supported at the moment, sequence axis should be the first and batch axis -- the second.
-                // sequence axis dimension determines the maximum number of time steps (= maximum sequence length),
-                // batch axis dimension -- the number of sequences (= 'training units') in a batch.
-                maxNumTimeSteps = maskShape[0];
-                numSequences = maskShape[1];
-            }
-            else if (maskShape.Rank() > 0)
-            {
-                if (numDynamicAxes > 1)
-                {
-                    maxNumTimeSteps = maskShape[0];
-                }
-                else
-                {
-                    // there's only one axis (the default batch axis).
-                    numSequences = maskShape[0];
-                }
-            }
-
-            return std::pair<size_t, size_t>(maxNumTimeSteps, numSequences);
-        };
 
         size_t maxNumTimeSteps, numSequences;
-        std::tie(maxNumTimeSteps, numSequences) = getNumTimeStepsAndSequencesFunc(valueShape.SubShape(varShape.Rank()), numDynamicAxes);
+        std::tie(maxNumTimeSteps, numSequences) = GetNumTimeStepsAndSequences(valueShape.SubShape(varShape.Rank()), numDynamicAxes);
 
-        auto getSequenceStartsAndLengthsFunc = [&getNumTimeStepsAndSequencesFunc](const NDMaskPtr& mask, std::vector<ptrdiff_t>& sequenceBeginIndices, std::vector<size_t>& sequenceLengths, size_t numDynamicAxes) {
+        auto getSequenceStartsAndLengthsFunc = [](const NDMaskPtr& mask, std::vector<ptrdiff_t>& sequenceBeginIndices, std::vector<size_t>& sequenceLengths, size_t numDynamicAxes) {
             auto cpuMask = mask;
             if (mask->Device() != DeviceDescriptor::CPUDevice())
                 cpuMask = mask->DeepClone(DeviceDescriptor::CPUDevice());
 
             const MaskKind* maskBuffer = cpuMask->DataBuffer();
             size_t maxNumTimeSteps, numSequences;
-            std::tie(maxNumTimeSteps, numSequences) = getNumTimeStepsAndSequencesFunc(mask->Shape(), numDynamicAxes);
+            std::tie(maxNumTimeSteps, numSequences) = GetNumTimeStepsAndSequences(mask->Shape(), numDynamicAxes);
 
             for (size_t i = 0; i < numSequences; ++i)
             {
@@ -829,6 +826,7 @@ namespace CNTK
     template void DictionaryValue::FreePtrAsType<NDArrayView>();
 
     template class TrainingParameterSchedule<double>;
+    template class TrainingParameterSchedule<size_t>;
 
     Learners::Learners(const std::vector<LearnerPtr>& learners) :
         m_learners(learners),
@@ -878,14 +876,14 @@ namespace CNTK
         }
     }
 
-    bool Learners::Update(std::unordered_map<Parameter, NDArrayViewPtr>& gradientValues, size_t sampleInMinibatch)
+    bool Learners::Update(std::unordered_map<Parameter, NDArrayViewPtr>& gradientValues, size_t sampleInMinibatch, bool sweepEnd)
     {
         bool anyUpdatesPerformed = false;
         for (auto learner : m_learners)
         {
             std::unordered_map<Parameter, NDArrayViewPtr> learnerGradients;
             GetLearnerGradients(learner, gradientValues, learnerGradients);
-            anyUpdatesPerformed |= learner->Update(learnerGradients, sampleInMinibatch);
+            anyUpdatesPerformed |= learner->Update(learnerGradients, sampleInMinibatch, sweepEnd);
         }
         return anyUpdatesPerformed;
     }
