@@ -107,6 +107,7 @@ public:
         // TODO: Add proper MBLayout inference/validation
         InferMBLayoutFromInputsForStandardCase(isFinalValidationPass);
 
+        /*
         // As we currently do not support external user defined Functions that generate new MBLayout,
         // let's verify that the dynamix axes of the external Function's output are consistent with the
         // input whose MBLayout we have linked to the output
@@ -121,6 +122,7 @@ public:
                     LogicError("The dynamic axes of the external user defined Function's output do not match the dynamic axes of the input whose MBLayout has been selected for the Computation node's output");
             }
         }
+        */
 
         // The external Function can only have a single output
         auto numOutputs = m_externalFunction->Outputs().size();
