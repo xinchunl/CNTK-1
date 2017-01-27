@@ -2262,8 +2262,7 @@ private:
 // * imageLayout is the image layout. Only cudnn is supported at present.
 // -----------------------------------------------------------------------
 template <class ElemType>
-class BatchNormalizationNode : public ComputationNodeNonLooping<ElemType>, public IFreezable,
-    //public NumInputs<6>, // the run_count can be omitted in unshared settings, for backcompat
+class BatchNormalizationNode : public ComputationNodeNonLooping<ElemType>, public NumInputs<6>, public IFreezable,
     public IdentityTransformerNodeOnOneInput<0>
 {
     typedef ComputationNodeNonLooping<ElemType> Base; UsingComputationNodeMembersBoilerplate;
@@ -2276,14 +2275,14 @@ class BatchNormalizationNode : public ComputationNodeNonLooping<ElemType>, publi
     static const size_t BIAS      = 2;
     static const size_t RUN_MEAN  = 3;
     static const size_t RUN_VAR   = 4;
-    static const size_t RUN_COUNT = 5; // note: no such parameter for legacy V1 models that do not share the count correctly
+    static const size_t RUN_COUNT = 5;
 public:
     BatchNormalizationNode(DEVICEID_TYPE deviceId, const wstring& name, bool spatial = false,
                            double normalizationTimeConstant=0, double blendTimeConstant=0,
                            double epsilon = 0, bool useCntkEngine = true, ImageLayoutKind imageLayoutKind = ImageLayoutKind::CHW) :
         Base(deviceId, name), m_spatial(spatial), m_normTimeConst(normalizationTimeConstant), m_blendTimeConst(blendTimeConstant),
         m_epsilon(epsilon), m_useCntkEngine(useCntkEngine), m_imageLayoutKind(imageLayoutKind),
-        m_runCountUntied(0),
+        m_runCountIsZero(true),
         m_convertRunningVariancePending(false),
         m_one(1, 1, deviceId)
     {
@@ -2295,9 +2294,7 @@ public:
                                configp->Get(L"epsilon"), configp->Get(L"useCntkEngine"),
                                ImageLayoutKindFrom(configp->Get(L"imageLayout")))
     {
-        //AttachInputsFromConfig(configp, this->GetExpectedNumInputs());
-        // To support legacy models, runCount is optional. Hence, we cannot use NumInputs<>, and must check ourselves in Validation.
-        AttachInputsFromConfig(configp);
+        AttachInputsFromConfig(configp, this->GetExpectedNumInputs());
     }
 
     void Save(File& fstream) const override
@@ -2308,15 +2305,14 @@ public:
         fstream << m_normTimeConst;
         fstream << m_blendTimeConst;
         fstream << (int32_t)m_imageLayoutKind;
-        RunCount();                   // cache m_runCountUntied, so that someone who inspects the file sees something meaningful (as an FYI)
-        fstream << m_runCountUntied;  // this is really saved as a FYI and for optimizing 0-checks; the primary storage for this value is in the shared Parameter
+        fstream << m_runCountIsZero;  // this is only saved for optimizing 0-checks;
         fstream << m_epsilon;
         fstream << m_useCntkEngine;
     }
 
     void Load(File& fstream, size_t modelVersion) override
     {
-        size_t mbCount = 0;
+        size_t mbCount = 0, runSampleCount = 0;
         Base::Load(fstream, modelVersion);
 
         if (modelVersion >= CNTK_MODEL_VERSION_6)
@@ -2325,10 +2321,20 @@ public:
             fstream >> m_normTimeConst;
             fstream >> m_blendTimeConst;
             fstream >> m_imageLayoutKind;
-            if (modelVersion >= CNTK_MODEL_VERSION_13)
-                fstream >> m_runCountUntied;
-            else
+
+            if (modelVersion >= CNTK_MODEL_VERSION_19)
+            {
+                fstream >> m_runCountIsZero; // the correct count will be loaded into the tied run count paramter.
+            }
+            else if (modelVersion >= CNTK_MODEL_VERSION_13) 
+            {
+                fstream >> runSampleCount;
+            }    
+            else 
+            {
                 fstream >> mbCount; // converted below
+            }
+
             fstream >> m_epsilon;
             fstream >> m_useCntkEngine;
         }
@@ -2377,16 +2383,23 @@ public:
         {
             // Prior to version 12, and prior to storing counts in a shared Parameter, minibatch count was stored instead of samples seen.
             // Approximate by assuming minibatch size 16, inform about that.
-            m_runCountUntied = 16 * mbCount;
+            runSampleCount = 16 * mbCount;
             fprintf(stderr,
                     "INFO: %ls: loading pre-CuDNNv5 model: approximated mini-batch count of %" PRIu64 " as %" PRIu64 " trained samples.\n"
                     "      Statistics in further training may be biased; consider re-training instead.\n",
-                    NodeName().c_str(), mbCount, m_runCountUntied);
+                    NodeName().c_str(), mbCount, runSampleCount);
 
             // Prior to version 12, running inverse standard deviation was
             // stored in Input 4. Now variance is used. We (approximately)
             // convert it during validation later (and then clear the flag).
             m_convertRunningVariancePending = true;
+        }
+
+
+        if (modelVersion < CNTK_MODEL_VERSION_19)
+        {
+            m_runCountIsZero = (runSampleCount == 0);
+            Input(RUN_COUNT)->Value().SetValue(ElemType(runSampleCount));
         }
     }
 
@@ -2402,48 +2415,40 @@ public:
             node->m_normTimeConst   = m_normTimeConst;
             node->m_blendTimeConst  = m_blendTimeConst;
             node->m_imageLayoutKind = m_imageLayoutKind;
-            node->m_runCountUntied  = m_runCountUntied;
+            node->m_runCountIsZero = m_runCountIsZero;
             node->m_epsilon         = m_epsilon;
             node->m_useCntkEngine   = m_useCntkEngine;
         }
     }
 
 private: // time-constant conversions
-
-    // The case of parameter tying is tricky. The same set of BN parameters can be shared
-    // across multiple instances in a network. This happens if the same BN object is applied
-    // in multiple parts of the network. For example, a DSSM network that compares images,
-    // where the same image-to-vec stack is applied to both a query image and a test image.
-    // In this case, 0-th (count), 1-st (mean), and 2-nd (variance) order statistics are shared
-    // across these instances.
-    // We still keep a non-tied version of the count, for the special purposes of
-    //  - knowing whether the shared accumulator can never be 0, to avoid a GPU sync point
-    //  - replicating the behavior of an old version that did not tie the count at all (incorrect).
-    bool HasTiedRunCount() const { return GetNumInputs() > RUN_COUNT; }
+    
     void ResetRunCount()
     {
-        if (HasTiedRunCount())
-            Input(RUN_COUNT)->Value().SetValue(0);
-        m_runCountUntied = 0;
+        Input(RUN_COUNT)->Value().SetValue(0);
+        m_runCountIsZero = true;
     }
+
     void AggregateRunCount(size_t countToAdd)
     {
-        if (HasTiedRunCount())
-        {
-            Input(RUN_COUNT)->Value().AddWithScaleOf(/*alpha=*/(ElemType)countToAdd, m_one); // this += countToAdd * (1)
-            if (countToAdd != 0)
-                m_runCountUntied = SIZE_MAX; // we only need this for 0 checks, this value says we only know it's not 0
-        }
-        else
-            m_runCountUntied += countToAdd;  // legacy case (non-shared): this is the count accumulator
+        Input(RUN_COUNT)->Value().AddWithScaleOf(/*alpha=*/(ElemType)countToAdd, m_one); // this += countToAdd * (1)
+        // this is only needed for 0 checks.
+        m_runCountIsZero = m_runCountIsZero && (countToAdd == 0);
     }
+
     size_t RunCount() const // const version of above; keep identical
     {
-        if (HasTiedRunCount())
-            m_runCountUntied = (size_t)Input(RUN_COUNT)->Value().Get00Element(); // if needed then cache it over
-        return m_runCountUntied;
+        auto count = (size_t)Input(RUN_COUNT)->Value().Get00Element();
+        m_runCountIsZero = (count == 0);
+        return count;
     }
-    bool IsRunCount0() const { return m_runCountUntied == 0 && RunCount() == 0; } // tied count >= untied one, so we can ask the untied one first to avoid GPU sync
+    
+    bool IsRunCount0() const 
+    { 
+        // check the flag first to avoid GPU sync 
+        // (when it's false, we know for a fact that the running count is non-zero)
+        return m_runCountIsZero && RunCount() == 0;
+    } 
 
     // map time constants to exp avg factor
     // This is the factor for the current MB's estimate (1-factor is used for the previous value of the running stats).
@@ -2452,9 +2457,7 @@ private: // time-constant conversions
         // in inference mode, only use long-term mean and do not update running estimates
         if (!Environment().IsTraining())
         {
-            if (IsRunCount0())
-                RuntimeError("%ls: inference mode is used, but nothing has been trained.", NodeName().c_str());
-            return 0;                                        // (m_normTimeConst == infinity) no new contribution from current minibatch
+            return 0; // (m_normTimeConst == infinity) no new contribution from current minibatch
         }
 
         double numSamples = (double)GetMBLayout()->GetActualNumSamples();
@@ -2483,7 +2486,7 @@ private: // time-constant conversions
         if (!isfinite(m_normTimeConst))                      // infinite
             return 0;                                        // no new contribution from current minibatch (infinitely long memory)
         else if (m_normTimeConst > 0)                        // not zero
-            return 1.0 - exp(-numSamples / m_normTimeConst); // interpolate expAvgFactor * MB stats + (1-expAvgFactor) * prev running stats
+            return -expm1(-numSamples / m_normTimeConst);    // interpolate expAvgFactor * MB stats + (1-expAvgFactor) * prev running stats
         else                                                 // zero
             return 1.0;                                      // don't use running stats at all
     }
@@ -2495,9 +2498,7 @@ private: // time-constant conversions
         // in inference mode, only use long-term mean and do not update running estimates
         if (!Environment().IsTraining())
         {
-            if (IsRunCount0())
-                RuntimeError("%ls: inference mode is used, but nothing has been trained.", NodeName().c_str());
-            return 1.0;                 // (m_blendTimeConst == infinity) estimate is taken 100% from the long-term running estimate
+            return 1.0; // (m_blendTimeConst == infinity) estimate is taken 100% from the long-term running estimate
         }
 
         // Initialization case: only use current minibatch.
@@ -2703,14 +2704,13 @@ public:
                         InvalidArgument("%ls: Data input cannot broadcast.", NodeDescription().c_str());
 #endif
             }
-            if (HasTiedRunCount()) // 0-th order statistics (count) (optional for backcompat with old code which didn't correctly share it)
-            {
-                // This must always be a [1] tensor. No inference allowed.
-                size_t i = RUN_COUNT;
-                if (Input(i)->HasMBLayout() || Input(i)->GetSampleLayout() != TensorShape(1))
-                    InvalidArgument("%ls: Input[%d] must be a vector of 1 element without dynamic axis.", NodeDescription().c_str(), (int)i);
-                RunCount(); // cache the shared value into the local cache, for 0 checks
-            }
+            
+            // This must always be a [1] tensor. No inference allowed.
+            size_t i = RUN_COUNT;
+            if (Input(i)->HasMBLayout() || Input(i)->GetSampleLayout() != TensorShape(1))
+                InvalidArgument("%ls: Input[%d] must be a vector of 1 element without dynamic axis.", NodeDescription().c_str(), (int)i);
+            RunCount(); // refresh the zero count flag value, for 0 checks
+
             if (m_spatial && m_imageLayoutKind != CHW)
             {
                 InvalidArgument(
@@ -2875,18 +2875,8 @@ private:
 
     // --- working variables
 
-    // Cached samples seen count, and legacy count.
-    // Models store the 0-th order stats in an Input like running mean and variance,
-    // in order to do the correct accumulator tying.
-    // We keep a local copy for two reasons:
-    //  - legacy models use this instead of a shared parameter (which is incorrect w.r.t. tying)
     //  - 0 checks test this first, to avoid unnecessary GPU syncs
-    //    We implement this rule: If this value is > 0 then the shared value cannot be 0;
-    //                            and if the shared value is 0, then this value must be 0.
-    //    This leverages that the count can only increase except when explicitly reset.
-    // This value is not updated unless needed, so it may be out of date during most operation.
-    // It will be updated at start (Validate()) and saving models, and any time the true value is needed.
-    mutable size_t m_runCountUntied; // cached running sample count (mutable since it is a cache)
+    mutable bool m_runCountIsZero;
     Matrix<ElemType> m_one;  // constant [1x1] matrix that contains a 1 (used for updating the shared count)
 
     // Interpolated actual mean/inverse stddev values. Pre-computed on forward pass, also used in gradient computation.

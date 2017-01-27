@@ -620,7 +620,7 @@ BatchNormalization(input, scale, bias, runMean, runVariance, runCount=None, spat
     operation = 'BatchNormalization'
     inputs =
         if BS.Constants.IsNone(runCount)
-        then _AsNodes (input : scale : bias : runMean : runVariance)            # legacy
+        then _AsNodes (input : scale : bias : runMean : runVariance : ParameterTensor {(1), initValue = 0, learningRateMultiplier = 0})
         else _AsNodes (input : scale : bias : runMean : runVariance : runCount)
     /*plus the function args*/
 }

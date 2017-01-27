@@ -9,6 +9,20 @@
 
 using namespace CNTK;
 
+#define RESNET_CIFAR_BOILERPLATE     \
+    auto minibatchSource = CreateCifarMinibatchSource(SIZE_MAX); \
+    auto imageStreamInfo = minibatchSource->StreamInfo(L"features"); \
+    auto labelStreamInfo = minibatchSource->StreamInfo(L"labels"); \
+    auto inputImageShape = imageStreamInfo.m_sampleLayout;  \
+    const size_t numOutputClasses = labelStreamInfo.m_sampleLayout[0];  \
+    auto imageInputName = L"Images";  \
+    auto imageInput = InputVariable(inputImageShape, imageStreamInfo.m_elementType, imageInputName);  \
+    auto classifierOutput = ResNetClassifier(imageInput, numOutputClasses, device, L"classifierOutput");  \
+    auto labelsInputName = L"Labels";  \
+    auto labelsVar = InputVariable({ numOutputClasses }, labelStreamInfo.m_elementType, labelsInputName); \
+    auto trainingLoss = CrossEntropyWithSoftmax(classifierOutput, labelsVar, L"lossFunction");  \
+    auto prediction = ClassificationError(classifierOutput, labelsVar, 5, L"predictionError"); 
+
 MinibatchSourcePtr CreateCifarMinibatchSource(size_t epochSize)
 {
     size_t imageHeight = 32;
@@ -122,23 +136,28 @@ FunctionPtr ResNetClassifier(Variable input, size_t numOutputClasses, const Devi
     return Plus(Times(outTimesParams, pool), outBiasParams, outputName);
 }
 
+void TestResumingResNetCifarClassificationFromACheckpoint(const DeviceDescriptor& device)
+{
+    RESNET_CIFAR_BOILERPLATE;
+
+    LearningRatePerSampleSchedule learningRatePerSample = 0.0078125;
+    auto trainer = CreateTrainer(classifierOutput, trainingLoss, prediction, { SGDLearner(classifierOutput->Parameters(), learningRatePerSample) });
+
+    trainer->RestoreFromCheckpoint(L"ResNetClassifier.v2");
+
+    const size_t minibatchSize = 32;
+    size_t numMinibatchesToTrain = 20;
+    for (size_t i = 0; i < numMinibatchesToTrain; ++i)
+    {
+        auto minibatchData = minibatchSource->GetNextMinibatch(minibatchSize, device);
+        trainer->TrainMinibatch({ { imageInput, minibatchData[imageStreamInfo] },{ labelsVar, minibatchData[labelStreamInfo] } }, device);
+        PrintTrainingProgress(trainer, i, numMinibatchesToTrain);
+    }
+}
+
 void TrainResNetCifarClassifer(const DeviceDescriptor& device, bool testSaveAndReLoad)
 {
-    auto minibatchSource = CreateCifarMinibatchSource(SIZE_MAX);
-    auto imageStreamInfo = minibatchSource->StreamInfo(L"features");
-    auto labelStreamInfo = minibatchSource->StreamInfo(L"labels");
-
-    auto inputImageShape = imageStreamInfo.m_sampleLayout;
-    const size_t numOutputClasses = labelStreamInfo.m_sampleLayout[0];
-
-    auto imageInputName = L"Images";
-    auto imageInput = InputVariable(inputImageShape, imageStreamInfo.m_elementType, imageInputName);
-    auto classifierOutput = ResNetClassifier(imageInput, numOutputClasses, device, L"classifierOutput");
-
-    auto labelsInputName = L"Labels";
-    auto labelsVar = InputVariable({ numOutputClasses }, labelStreamInfo.m_elementType, labelsInputName);
-    auto trainingLoss = CrossEntropyWithSoftmax(classifierOutput, labelsVar, L"lossFunction");
-    auto prediction = ClassificationError(classifierOutput, labelsVar, 5, L"predictionError");
+    RESNET_CIFAR_BOILERPLATE;
 
     if (testSaveAndReLoad)
     {
@@ -175,8 +194,12 @@ void TrainCifarResnet()
 {
     fprintf(stderr, "\nTrainCifarResnet..\n");
 
-    if (IsGPUAvailable())
+    if (IsGPUAvailable()) 
+    {
+        TestResumingResNetCifarClassificationFromACheckpoint(DeviceDescriptor::GPUDevice(0));
         TrainResNetCifarClassifer(DeviceDescriptor::GPUDevice(0), true /*testSaveAndReLoad*/);
+    }
+        
     else
         fprintf(stderr, "Cannot run TrainCifarResnet test on a CPU device.\n");
 }

@@ -569,10 +569,10 @@ def unpooling(operand, pooling_input, unpooling_type, unpooling_window_shape, st
         >>> x = C.input_variable(img.shape)
         >>> y = C.pooling(x, C.MAX_POOLING, (2,2), (2,2))
         >>> C.unpooling(y, x, C.MAX_UNPOOLING, (2,2), (2,2)).eval({x : [img]})
-	array([[[[[  0.,   0.,   0.,   0.],
-		  [  0.,   5.,   0.,   7.],
-		  [  0.,   0.,   0.,   0.],
-		  [  0.,  13.,   0.,  15.]]]]], dtype=float32)
+    array([[[[[  0.,   0.,   0.,   0.],
+          [  0.,   5.,   0.,   7.],
+          [  0.,   0.,   0.,   0.],
+          [  0.,  13.,   0.,  15.]]]]], dtype=float32)
 
     Args:
         operand: unpooling input
@@ -598,9 +598,16 @@ def unpooling(operand, pooling_input, unpooling_type, unpooling_window_shape, st
                      unpooling_window_shape, strides, auto_padding,
                      lower_pad, upper_pad, name)
 
+@typemap
+def batch_normalization(operand, scale, bias, running_mean, running_inv_std, spatial,
+                        normalization_time_constant=5000, blend_time_constant=0,
+                        epsilon=0.00001, use_cudnn_engine=False, name=''):
+    raise DeprecationWarning("batch_normalization requires an additional "
+                             "'running_sample_count' parameter, which can be "
+                             "instantiated as 'constant(0., (1))'")
 
 @typemap
-def batch_normalization(operand, scale, bias, running_mean, running_inv_std, running_count, spatial,
+def batch_normalization(operand, scale, bias, running_mean, running_inv_std, running_sample_count, spatial,
                         normalization_time_constant=5000, blend_time_constant=0,
                         epsilon=0.00001, use_cudnn_engine=False, name=''):
     '''
@@ -617,7 +624,8 @@ def batch_normalization(operand, scale, bias, running_mean, running_inv_std, run
          training as well. You must pass a constant tensor with initial value 0 and the same dimensions
          as ``scale`` and ``bias``
         running_inv_std: running variance. Represented as ``running_mean``
-        running_count: You must pass a constant tensor with initial value 0 and dimension (1,) with device=cpu()
+        running_sample_count: You must pass a constant tensor with initial value 0 and dimension (1,) 
+         with device=cpu()
         spatial(bool): flag that indicates whether to compute mean/var for each feature in a minibatch
          independently or, in case of convolutional layers, per future map
         normalization_time_constant(float, default 5000): time constant for computing running average of

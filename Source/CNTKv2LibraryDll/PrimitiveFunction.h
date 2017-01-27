@@ -663,33 +663,33 @@ namespace CNTK
         static NDShape BatchNormalizationOutputShape(std::vector<Variable>& operands, bool spatial, bool inferDimensions)
         {
             NDShape mainOperandShape = operands[0].Shape();
-            for (size_t i = 1; i < operands.size(); i++) // all but first and last arguments must match the first; last one must be a [1]
+            for (size_t i = 1; i < operands.size() - 1; i++) // all but first and last arguments must match the first; last one must be a [1]
             {
                 if (!operands[i].DynamicAxes().empty())
                     InvalidArgument("BatchNormalization: Input[%d] has a dynamic axis that is not allowed!", (int)i);
 
                 // Infer dimensions of learnable parameters
                 auto paramShape = operands[i].Shape();
-                if (i < operands.size() - 1)
+              
+                if (inferDimensions && ((paramShape.Rank() == 1) && paramShape.HasInferredDimension()) && !mainOperandShape.HasInferredDimension())
                 {
-                    if (inferDimensions && ((paramShape.Rank() == 1) && paramShape.HasInferredDimension()) && !mainOperandShape.HasInferredDimension())
-                    {
-                        size_t total = spatial ? mainOperandShape[mainOperandShape.Rank() - 1] : mainOperandShape.TotalSize();
-                        paramShape[0] = total;
-                        std::vector<std::pair<Variable, NDShape>> newParamShape = { { operands[i], paramShape } };
-                        UpdateOperandShapes(newParamShape);
-                    }
+                    size_t total = spatial ? mainOperandShape[mainOperandShape.Rank() - 1] : mainOperandShape.TotalSize();
+                    paramShape[0] = total;
+                    std::vector<std::pair<Variable, NDShape>> newParamShape = { { operands[i], paramShape } };
+                    UpdateOperandShapes(newParamShape);
+                }
 
-                    if (!paramShape.HasInferredDimension() && !operands[1].Shape().HasInferredDimension() && (paramShape != operands[1].Shape()))
-                        InvalidArgument("BatchNormalization: Input[%d] has a shape (%S) different from Input[1] (%S), but they must be identical.", 
-                                        (int)i,
-                                        AsStringForErrorReporting(paramShape).c_str(),
-                                        AsStringForErrorReporting(operands[1].Shape()).c_str());
-                }
-                else if (paramShape != NDShape(std::vector<size_t>{ 1 })) // last arguments is count, must be a 1-dim vector
-                {
-                    InvalidArgument("BatchNormalization: Input[%d] must be a 1-dimensional vector.", (int)i);
-                }
+                if (!paramShape.HasInferredDimension() && !operands[1].Shape().HasInferredDimension() && (paramShape != operands[1].Shape()))
+                    InvalidArgument("BatchNormalization: Input[%d] has a shape (%S) different from Input[1] (%S), but they must be identical.", 
+                                    (int)i,
+                                    AsStringForErrorReporting(paramShape).c_str(),
+                                    AsStringForErrorReporting(operands[1].Shape()).c_str());
+                
+            }
+
+            if (operands[operands.size() - 1].Shape().Rank() != 0) // last arguments is count, must be a scalar
+            {
+                InvalidArgument("BatchNormalization: Input[%d] (running mean sample count) must be a scalar.", (int)(operands.size() - 1));
             }
 
             return UnaryElementwiseOpOutputShape(mainOperandShape);
@@ -707,6 +707,10 @@ namespace CNTK
 
         // Increasing s_serializationVersion every time we add more ops allows us to print 
         // a more meaningful message when trying to load a new model with a stale binary. 
-        static const size_t s_serializationVersion = 3;
+        // version 1: initial version.
+        // version 2: changed in 7af3a7c0e46cb12f873f1289400a9c5d86746662. TODO(n17s): add description.
+        // version 3: changed in df0ab4e58186738931968e806b61bc80d7b6e20e. TODO(pkrannen): add description.
+        // version 4: added extra parameter (#6) for running mean sample count in BatchNormalization.
+        static const size_t s_serializationVersion = 4;
     };
 }

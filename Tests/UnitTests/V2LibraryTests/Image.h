@@ -13,7 +13,7 @@ inline FunctionPtr ConvBNLayer(Variable input, size_t outFeatureMapCount, size_t
     auto scaleParams = Parameter({ NDShape::InferredDimension }, (float)scValue, device);
     auto runningMean = Constant({ NDShape::InferredDimension }, 0.0f, device);
     auto runningInvStd = Constant({ NDShape::InferredDimension }, 0.0f, device);
-    auto runningCount = Constant({ 1 }, 0.0f, device);
+    auto runningCount = Constant::Scalar(0.0f, device);
     return BatchNormalization(convFunction, scaleParams, biasParams, runningMean, runningInvStd, runningCount, spatial, (double)bnTimeConst, 0.0, 1e-5 /* epsilon */);
 }
 
@@ -31,7 +31,7 @@ inline FunctionPtr ProjLayer(Variable wProj, Variable input, size_t hStride, siz
     auto m = Constant({ outFeatureMapCount }, 0.0f, device);
     auto v = Constant({ outFeatureMapCount }, 0.0f, device);
 
-    auto runningCount = Constant({ 1 }, 0.0f, device);
+    auto runningCount = Constant::Scalar(0.0f, device);
 
     size_t numInputChannels = input.Shape()[input.Shape().Rank() - 1];
 

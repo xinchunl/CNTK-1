@@ -723,6 +723,10 @@ void TestThatExceptionsAreRaisedForNonExistentPaths()
 
 }
 
+void TestLoadingAModelWithALoadBatchNormFunction() {
+    UNUSED(Function::LoadModel(L"batch.norm.no.sample.count.v2.bin"));
+}
+
 void TestLoadingDictionariesGeneratedFromPresentPastAndFutureProtos() 
 {
     Dictionary presentDict, pastDict, futureDict;
@@ -793,6 +797,8 @@ void TestCheckpointingWithStatefulNodes(const DeviceDescriptor& device)
 void SerializationTests()
 {
     fprintf(stderr, "\nSerializationTests..\n");
+
+    TestLoadingAModelWithALoadBatchNormFunction();
 
     TestThatExceptionsAreRaisedForNonExistentPaths();
     TestLoadingDictionariesGeneratedFromPresentPastAndFutureProtos();

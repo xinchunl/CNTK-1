@@ -44,9 +44,14 @@ int main()
     fprintf(stderr, "Run tests using CPU-only build.\n");
 #endif
 
+    
+
     // Lets disable automatic unpacking of PackedValue object to detect any accidental unpacking 
     // which will have a silent performance degradation otherwise
     Internal::SetAutomaticUnpackingOfPackedValues(/*disable =*/ true);
+
+    TrainCifarResnet();
+    SerializationTests();
 
     // Note: Run the device selection tests first since later tests
     // may interfere with device selection by freezing default device

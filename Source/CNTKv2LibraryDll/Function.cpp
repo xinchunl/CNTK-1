@@ -676,12 +676,11 @@ namespace CNTK
 
         for (int i = 0; i < parameters.size(); i++)
         {
-            assert(Internal::AreEquivalent(parameters[i], restoredParameters[i]));
-
-            // Additionally, to be super-safe, compare parameter UIDs.
-            if (parameters[i].Uid() != restoredParameters[i].Uid())
+            if (!Internal::AreEquivalent(parameters[i], restoredParameters[i])) 
             {
-                 InvalidArgument("'This' function parameters and restored function parameters do not have identical UIDs.");
+                InvalidArgument("'This' function parameter (name: '%ls', uid: '%ls') and restored function parameter (name: '%ls', uid: '%ls') "
+                                " are not equivalent.", parameters[i].Name(), parameters[i].Uid(), 
+                                restoredParameters[i].Name(), restoredParameters[i].Uid());
             }
 
             parameters[i].Value()->CopyFrom(*(restoredParameters[i].Value().get()));
@@ -1166,7 +1165,7 @@ namespace CNTK
                                    const Variable& bias,
                                    const Variable& runningMean,
                                    const Variable& runningInvStd,
-                                   const Variable& runningCount,
+                                   const Variable& runningSampleCount,
                                    bool spatial,
                                    double normalizationTimeConstant,
                                    double blendTimeConstant,
@@ -1181,12 +1180,11 @@ namespace CNTK
         additionalProperties[PrimitiveFunction::AttributeNameEpsilon] = epsilon;
         additionalProperties[PrimitiveFunction::AttributeNameUseCuDNNEngine] = useCuDNNEngine;
 
-        std::vector<Variable> operands = { operand, scale, bias, runningMean, runningInvStd, runningCount };
-        return AsComposite(MakeSharedObject<PrimitiveFunction>(PrimitiveOpType::BatchNormalization,
-                                                                             operands,
-                                                                             std::move(additionalProperties),
-                                                                             name),
-                                         name);
+        std::vector<Variable> operands = { operand, scale, bias, runningMean, runningInvStd, runningSampleCount };
+        return AsComposite(
+            MakeSharedObject<PrimitiveFunction>(
+                PrimitiveOpType::BatchNormalization, operands, std::move(additionalProperties), name),
+            name);
     }
 
     FunctionPtr Clip(const Variable& operand, const Variable& min, const Variable& max, const std::wstring& name)
