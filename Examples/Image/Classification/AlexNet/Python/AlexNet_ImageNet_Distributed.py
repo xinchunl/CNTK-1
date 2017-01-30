@@ -32,6 +32,7 @@ image_height = 227
 image_width  = 227
 num_channels = 3  # RGB
 num_classes  = 1000
+model_name = "AlexNet.model"
 
 # Create a minibatch source.
 def create_image_mb_source(map_file, is_training, total_number_of_samples):
@@ -152,7 +153,15 @@ def create_trainer(network, epoch_size, num_quantization_bits):
         distributed_after=0)
 
     # Create trainer
-    return cntk.Trainer(network['output'], network['ce'], network['pe'], parameter_learner)
+    trainer = cntk.Trainer(network['output'], network['ce'], network['pe'], parameter_learner)
+
+    # In the future, checkpoint file will be automatically handled by cntk.training_session, the 
+    # code below demonstrate how to do it manually. 
+    # If a checkpoint file exists, loading it will overwrite all settings such as learning rate, momentum, etc. 
+    ckp_file = os.path.join(model_path, model_name)
+    if os.path.isfile(ckp_file): 
+        trainer.restore_from_checkpoint(ckp_file)
+    return trainer
 
 # Train and test
 def train_and_test(network, trainer, train_source, test_source, progress_printer, minibatch_size, epoch_size):
@@ -164,7 +173,7 @@ def train_and_test(network, trainer, train_source, test_source, progress_printer
     }
 
     training_session = cntk.training_session(train_source, trainer,
-        cntk.minibatch_size_schedule(minibatch_size), progress_printer, input_map, os.path.join(model_path, "AlexNet_"), epoch_size)
+        cntk.minibatch_size_schedule(minibatch_size), progress_printer, input_map, os.path.join(model_path, model_name), epoch_size)
     training_session.train()
 
     # process minibatches and evaluate the model
@@ -237,5 +246,5 @@ if __name__=='__main__':
                            max_epochs=112, 
                            log_to_file=log_dir, 
                            num_mbs_per_log=500, 
-                           gen_heartbeat=False)
+                           gen_heartbeat=True)  # generate heartbeat in stdout so the program is not treated as hanging 
     Communicator.finalize()
