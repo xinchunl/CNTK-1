@@ -138,7 +138,7 @@ def create_alexnet():
     }
 
 # Create trainer
-def create_trainer(network, epoch_size, num_quantization_bits):
+def create_trainer(network, epoch_size, num_quantization_bits, enable_checkpoint_file):
     # Set learning parameters
     lr_per_mb         = [0.01]*25 + [0.001]*25 + [0.0001]*25 + [0.00001]*25 + [0.000001]
     lr_schedule       = cntk.learning_rate_schedule(lr_per_mb, unit=cntk.learner.UnitType.minibatch, epoch_size=epoch_size)
@@ -158,9 +158,10 @@ def create_trainer(network, epoch_size, num_quantization_bits):
     # In the future, checkpoint file will be automatically handled by cntk.training_session, the 
     # code below demonstrate how to do it manually. 
     # If a checkpoint file exists, loading it will overwrite all settings such as learning rate, momentum, etc. 
-    ckp_file = os.path.join(model_path, model_name)
-    if os.path.isfile(ckp_file): 
-        trainer.restore_from_checkpoint(ckp_file)
+    if enable_checkpoint_file: 
+        ckp_file = os.path.join(model_path, model_name)
+        if os.path.isfile(ckp_file): 
+            trainer.restore_from_checkpoint(ckp_file)
     return trainer
 
 # Train and test
@@ -201,7 +202,7 @@ def train_and_test(network, trainer, train_source, test_source, progress_printer
 
 # Train and evaluate the network.
 def alexnet_train_and_eval(train_data, test_data, num_quantization_bits=32, minibatch_size=256, epoch_size = 1281167, max_epochs=112, 
-                           log_to_file=None, num_mbs_per_log=None, gen_heartbeat=False):
+                           log_to_file=None, num_mbs_per_log=None, enable_checkpoint_file=False, gen_heartbeat=False):
     _cntk_py.set_computation_network_trace_level(0)
 
     progress_printer = ProgressPrinter(
@@ -213,7 +214,7 @@ def alexnet_train_and_eval(train_data, test_data, num_quantization_bits=32, mini
         num_epochs=max_epochs)
 
     network = create_alexnet()
-    trainer = create_trainer(network, epoch_size, num_quantization_bits)
+    trainer = create_trainer(network, epoch_size, num_quantization_bits, enable_checkpoint_file)
     train_source = create_image_mb_source(train_data, True, total_number_of_samples=max_epochs * epoch_size)
     test_source = create_image_mb_source(test_data, False, total_number_of_samples=FULL_DATA_SWEEP)
     train_and_test(network, trainer, train_source, test_source, progress_printer, minibatch_size, epoch_size)
@@ -246,5 +247,6 @@ if __name__=='__main__':
                            max_epochs=112, 
                            log_to_file=log_dir, 
                            num_mbs_per_log=500, 
-                           gen_heartbeat=True)  # generate heartbeat in stdout so the program is not treated as hanging 
+                           enable_checkpoint_file=True, # enable loading from checkpoint file to continue training if such file exists
+                           gen_heartbeat=True)          # generate heartbeat in stdout so the program is not treated as hanging 
     Communicator.finalize()
