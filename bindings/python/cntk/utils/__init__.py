@@ -112,6 +112,7 @@ def sanitize_input(arg, fallback_dtype=np.float32, reshape=None):
       ``arg`` is a number or NumPy array. Variable otherwise.
     """
 
+    from cntk.ops.functions import UserFunction
     from cntk.ops.variables import Constant, Variable, Parameter
     from cntk.ops import constant
 
@@ -121,6 +122,10 @@ def sanitize_input(arg, fallback_dtype=np.float32, reshape=None):
                    Variable, cntk_py.Variable,
                    Parameter, cntk_py.Parameter)):
         return arg
+
+    if isinstance(arg, UserFunction):
+        raise TypeError('user functions cannot be directly passed; please use'
+                ' the instance returned by its compose() method')
 
     # or a Function?
     if isinstance(arg, cntk_py.Function):

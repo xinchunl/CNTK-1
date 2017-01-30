@@ -107,6 +107,10 @@ class Function(cntk_py.Function):
             raise AttributeError("neither Function nor its output variable"
                     " has '%s'"%name)
 
+        if isinstance(self, UserFunction):
+            raise TypeError('user functions cannot be directly passed; please use'
+                    ' the instance returned by its compose() method')
+
         outputs = self.__getattribute__('outputs')
         if len(outputs) != 1:
             raise AttributeError("Function does not have '%s' and it cannot "
@@ -659,11 +663,7 @@ class UserFunction(Function):
             else:
                 raise ValueError('expected Variable, but got "%s"'%type(i))
 
-        # FIXME we need to save a reference here so that the function does not
-        # disappear
-        self.var_inputs = var_inputs
-
-        super(Function, self).__init__(var_inputs, name)
+        super(UserFunction, self).__init__(var_inputs, name)
 
         # Memory management for user defined functions has to be controlled by
         # the C++ side. For more information:
@@ -762,10 +762,28 @@ class UserFunction(Function):
             variables[k] = sanitize_batch(k, v, None, state.device())
 
     def infer_outputs(self):
+        '''
+        Returns a list of all output variables this user-defined function
+        outputs.
+
+        Output variables are created by
+        :meth:`~cntk.ops.functions.output_variable`.
+        '''
         raise NotImplementedError('infer_outputs has to be overwritten')
 
     def op_name(self):
+        '''
+        Returns the operator name.
+        '''
         return 'UserFunction'
+
+    def compose(self):
+        '''
+        Return a wrapped version of this user-defined function that can be
+        used to create a graph.
+        '''
+        from . import as_composite
+        return as_composite(self)
 
 @typemap
 def load_model(filename, device=None):
