@@ -78,7 +78,6 @@ struct SequenceDataBase
     virtual const void* GetDataBuffer() = 0;
 
     KeyType m_key;
-    ChunkPtr m_chunk;
     ElementType m_elementType;     // Sequence element type.
     TensorShapePtr m_sampleLayout; // Sample layout, can be shared by several sequences.
     bool m_isValid;                // Flag indicating if sequence is valid.

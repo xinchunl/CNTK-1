@@ -117,6 +117,67 @@ BOOST_AUTO_TEST_CASE(InvalidImageSimpleCompositeAndBase64)
     });
 };
 
+BOOST_AUTO_TEST_CASE(Base64WithWriteIds)
+{
+    auto test = [this](std::vector<std::wstring> additionalParameters, multiset<string>& actualKeys)
+    {
+        shared_ptr<StreamMinibatchInputs> inputs = CreateStreamMinibatchInputs<float>(1, 1, false, true, true);
+        shared_ptr<DataReader> reader = GetDataReader(testDataPath() + "/Config/ImageReaderSimple_Config.cntk",
+            "Composite_Test", "reader", additionalParameters);
+
+        reader->StartMinibatchLoop(2 /*mbSize*/, 0, inputs->GetStreamDescriptions(), 4/*epochSize*/);
+        for (auto index = 0; reader->GetMinibatch(*inputs) && index < m_maxMiniBatchCount; index++)
+        {
+            for (const auto s : inputs->GetInput(L"input").pMBLayout->GetAllSequences())
+            {
+                auto key = inputs->m_idToKeyMapping(s.seqId);
+                actualKeys.insert(key);
+            }
+        }
+    };
+
+    {
+        multiset<string> expectedKeys
+        {
+            "image0", "image0",
+            "image1", "image1",
+            "image2", "image2",
+            "image3", "image3"
+        };
+
+        std::vector<std::wstring> additionalParameters
+        {
+            L"MapFile=\"$RootDir$/Base64WithStringIds_map.txt\"",
+            L"DeserializerType=\"Base64ImageDeserializer\""
+        };
+
+        multiset<string> actualKeys;
+        test(additionalParameters, actualKeys);
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(actualKeys.begin(), actualKeys.end(),
+            expectedKeys.begin(), expectedKeys.end());
+    }
+
+    {
+        multiset<string> expectedKeys
+        {
+            "0", "0",
+            "1", "1",
+            "2", "2",
+            "3", "3"
+        };
+
+        std::vector<std::wstring> additionalParameters
+        {
+            L"MapFile=\"$RootDir$/Base64ImageReaderSimple_map.txt.txt\"",
+            L"DeserializerType=\"Base64ImageDeserializer\""
+        };
+
+        multiset<string> actualKeys;
+        test(additionalParameters, actualKeys);
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(actualKeys.begin(), actualKeys.end(),
+            expectedKeys.begin(), expectedKeys.end());
+    }
+};
 
 BOOST_AUTO_TEST_CASE(ImageAndImageReaderSimple)
 {
