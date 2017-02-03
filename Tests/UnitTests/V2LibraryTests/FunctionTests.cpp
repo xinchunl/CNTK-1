@@ -774,11 +774,80 @@ void TestOuputVariableName(const DeviceDescriptor& device)
         static_cast<unsigned long>(output->Output().Shape().TotalSize()));
 }
 
+void CheckFindByNameResult(FunctionPtr actual, FunctionPtr expected)
+{
+    if (actual == nullptr)
+    {
+        if (expected != nullptr)
+            ReportFailure("The expected function '%S' has not been found.", expected->Name());
+    }
+    else 
+    {
+        if (expected == nullptr)
+            ReportFailure("Found a function '%S', but null is expected.", actual->Name());
+        else if (expected->Name().compare(actual->Name()) != 0)
+            ReportFailure("The found function '%S' does have the same name as the exepected one '%S'", actual->Name(), expected->Name());
+    }
+}
+
+void TestFindByName()
+{
+    size_t inputDim = 10;
+    size_t outputDim = 20;
+    const std::wstring timesFuncName = L"TimesFunc";
+    const std::wstring plusFuncName = L"PlusFunc";
+    const std::wstring plusFuncName2 = L"PlusFunc2";
+    const std::wstring minusFuncName = L"MinusFunc";
+
+    auto inputVar = InputVariable({ inputDim }, DataType::Float, L"features");
+
+    auto inputPlaceholder = PlaceholderVariable(L"inputPlaceholder");
+    auto timesParam = CNTK::Parameter(CNTK::NDArrayView::RandomUniform<float>({ outputDim, inputDim }, -0.05, 0.05, 1, DeviceDescriptor::DefaultDevice()));
+    auto timesFunc = CNTK::Times(timesParam, inputPlaceholder, timesFuncName);
+    auto plusFunc = CNTK::Plus(Constant::Scalar(2.0f), timesFunc, plusFuncName);
+    auto plusFunc2 = CNTK::Plus(Constant::Scalar(2.0f), plusFunc, plusFuncName);
+    auto minusFunc = CNTK::Minus(plusFunc2, Constant::Scalar(1.0f), minusFuncName);
+
+    auto blockFunc = CNTK::AsBlock(std::move(minusFunc), { { inputPlaceholder, inputVar} }, L"TimesPlusMinus", L"BlockFunc");
+
+    auto inputVar2 = InputVariable({ outputDim }, DataType::Float, L"features2");
+    auto plusFunc3 = CNTK::Plus(Constant::Scalar(3.0f), inputVar2, plusFuncName2);
+    auto plusFunc4 = CNTK::Plus(plusFunc3, blockFunc, plusFuncName);
+    auto minusFunc2 = CNTK::Minus(plusFunc4, Constant::Scalar(1.0f), minusFuncName);
+
+    // Test functions that don't use any block function
+    CheckFindByNameResult(minusFunc->FindByName(timesFuncName), timesFunc);
+    CheckFindByNameResult(minusFunc->FindByName(L"NonExistingFunc"), nullptr);
+    VerifyException([&minusFunc, &plusFuncName]() {
+        minusFunc->FindByName(plusFuncName);
+    }, "The expected exception has not been caugth: multiple functions with the same name.");
+
+    // Test functions that use block functions, but nestedSearchInsideBlockFunction is false.
+    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName2), plusFunc3);
+    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName), plusFunc4);
+    CheckFindByNameResult(minusFunc2->FindByName(minusFuncName), minusFunc2);
+    CheckFindByNameResult(minusFunc2->FindByName(timesFuncName), nullptr);
+    CheckFindByNameResult(minusFunc2->FindByName(L"NonExistingFunc"), nullptr);
+
+    // Test nestedSearchInsideBlockFunction.
+    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName2, true), plusFunc3);
+    CheckFindByNameResult(minusFunc2->FindByName(timesFuncName, true), timesFunc);
+    CheckFindByNameResult(minusFunc2->FindByName(L"NonExistingFunc", true), nullptr);
+    VerifyException([&minusFunc2, &plusFuncName]() {
+        minusFunc2->FindByName(plusFuncName, true);
+    }, "The expected exception has not been caugth: multiple functions with the same name.");
+    VerifyException([&minusFunc2, &minusFuncName]() {
+        minusFunc2->FindByName(minusFuncName, true);
+    }, "The expected exception has not been caugth: multiple functions with the same name.");
+}
+
 void FunctionTests()
 {
     fprintf(stderr, "\nFunctionTests..\n");
 
     TestSplice();
+
+    TestFindByName();
 
     TestChangingParameterValues<float>(2, DeviceDescriptor::CPUDevice());
     if (IsGPUAvailable())
