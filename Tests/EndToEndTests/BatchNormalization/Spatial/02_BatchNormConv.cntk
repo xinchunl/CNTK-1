@@ -47,6 +47,7 @@ Train = [
         readerType = "CNTKTextFormatReader"
         # See REAMDE.md for details on getting the data (Train_cntk_text.txt).
         file = "$DataDir$/Train_cntk_text.txt"
+        sampleBasedRandomizationWindow=true
         input = [
             features = [
                 dim = 3072

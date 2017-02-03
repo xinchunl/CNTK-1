@@ -67,6 +67,7 @@ trainNetwork = {
 
     reader = {
         readerType = "CNTKTextFormatReader"
+        sampleBasedRandomizationWindow=true
         # See DataSets/MNIST/README.md for details on getting the data (Train-28x28_cntk_text.txt).
         file = "$DataDir$/Train-28x28_cntk_text.txt"
         input = {

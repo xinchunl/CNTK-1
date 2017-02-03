@@ -41,6 +41,7 @@ train = [
         readerType = "CNTKTextFormatReader"
         # See ../README.md for details on getting the data (Train-28x28_cntk_text.txt).
         file = "$DataDir$/Train-28x28_cntk_text.txt"
+        sampleBasedRandomizationWindow=true
         input = [
             features = [
                 dim = 784
