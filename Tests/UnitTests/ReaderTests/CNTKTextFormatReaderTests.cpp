@@ -476,8 +476,8 @@ BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_space_separated)
 
 
 
-// 1 sequences with 1 sample/input, the last sequence is not well-formed 
-// (trailing '\n' is missing)
+// 1 sequences with 1 sample/input, the last sequence is not terminated
+// with a new line.
 BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_missing_trailing_newline)
 {
     HelperRunReaderTest<double>(
@@ -662,7 +662,7 @@ BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_invalid_inputs)
 };
 
 
-BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_no_traling_newline_valid_input)
+BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_no_trailing_newline_valid_input)
 {
     vector<StreamDescriptor> streams(1);
     streams[0].m_alias = "A";
@@ -695,7 +695,7 @@ BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_no_traling_newline_valid_input)
 
 };
 
-BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_no_traling_newline_invalid_input)
+BOOST_AUTO_TEST_CASE(CNTKTextFormatReader_no_trailing_newline_invalid_input)
 {
     vector<StreamDescriptor> streams(1);
     streams[0].m_alias = "A";

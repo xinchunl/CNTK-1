@@ -21,6 +21,7 @@
 #include "CorpusDescriptor.h"
 #include "ConfigUtil.h"
 #include "StringUtil.h"
+#include "ReaderConstants.h"
 
 namespace Microsoft { namespace MSR { namespace CNTK {
 
@@ -116,16 +117,23 @@ CompositeDataReader::CompositeDataReader(const ConfigParameters& config) :
         }
 
         randomizationWindow = config(L"randomizationWindow", randomizationWindow);
-
         bool sampleBasedRandomizationWindow = config(L"sampleBasedRandomizationWindow", true);
 
         if (!config.ExistsCurrent(L"randomizationWindow") && // randomization window is not specified
             !config.ExistsCurrent(L"sampleBasedRandomizationWindow") && // sampleBasedRandomizationWindow is not specified
             ContainsDeserializer(config, L"CNTKTextFormatDeserializer"))
         {
-            size_t chunkSizeBytes = config(L"chunkSizeInBytes", 32 * 1024 * 1024); // 32 MB by default
-            randomizationWindow = (4 << 30) / chunkSizeBytes; // ~ 4 GB  
+            sampleBasedRandomizationWindow = false;
+            size_t chunkSizeBytes = config(L"chunkSizeInBytes", g_32MB); // 32 MB by default
+            randomizationWindow = g_4GB / chunkSizeBytes; // ~ 4 GB  
             // TODO: decrease randomization window if m_deserializers.size() > 1 ?
+        } 
+        else if (!config.ExistsCurrent(L"randomizationWindow") && // randomization window is not specified
+                 config.ExistsCurrent(L"sampleBasedRandomizationWindow") && // // sampleBasedRandomizationWindow is specified explicitly
+                 sampleBasedRandomizationWindow)        
+        {
+            // config explicitly says to use a sample-based window, but does not specify its size.
+            LogicError("'sampleBasedRandomizationWindow' (== 'true') requires that the 'randomizationWindow' is explicitly specified.");
         }
 
         bool shouldPrefetch = true;

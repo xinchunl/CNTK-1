@@ -1566,8 +1566,8 @@ Test module "ReaderTests" has passed with:
       2 assertions out of 2 passed
 
   Test suite "ReaderLibTests" has passed with:
-    23 test cases out of 23 passed
-    396613 assertions out of 396613 passed
+    25 test cases out of 25 passed
+    398303 assertions out of 398303 passed
 
     Test case "ReaderLibTests/CheckSetCurrentCursorForRandomizers" has passed with:
       12 assertions out of 12 passed
@@ -1585,6 +1585,12 @@ Test module "ReaderTests" has passed with:
       4 assertions out of 4 passed
 
     Test case "ReaderLibTests/BlockRandomizerInstantiate" has passed
+    
+    Test case "ReaderLibTests/TestChunkBasedRandomization" has passed with:
+      1680 assertions out of 1680 passed
+
+    Test case "ReaderLibTests/TestChunkBasedRandomizationQuality" has passed with:
+      10 assertions out of 10 passed
 
     Test case "ReaderLibTests/TestRandomization_FirstEpoch" has passed with:
       1476 assertions out of 1476 passed

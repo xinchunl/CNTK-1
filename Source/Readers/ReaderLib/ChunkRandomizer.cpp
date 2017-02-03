@@ -121,13 +121,20 @@ namespace Microsoft { namespace MSR { namespace CNTK {
     void ChunkRandomizer::RandomizeUsingWindowInChunks()
     {
         auto halfWindowRange = m_randomizationRange / 2;
-        for (auto& chunk : m_randomizedChunks)
+        auto windwowSize = m_randomizationRange == 0 ? 1 : ChunkIdType(m_randomizationRange + 1);
+        for (auto i = 0; i < m_randomizedChunks.size(); i++)
         {
-            auto index = chunk.m_chunkId;
-            chunk.m_randomizationWindow.m_begin = (index > halfWindowRange) ? index - ChunkIdType(halfWindowRange) : 0;
-            auto length = m_randomizationRange == 0 ? 1 : ChunkIdType(m_randomizationRange);
-            chunk.m_randomizationWindow.m_end = chunk.m_randomizationWindow.m_begin + length;
-            chunk.m_randomizationWindow.m_end = std::min(chunk.m_randomizationWindow.m_end, ChunkIdType(m_randomizedChunks.size()));
+            auto& chunk = m_randomizedChunks[i];
+            chunk.m_randomizationWindow.m_begin = (i > halfWindowRange) ? i - ChunkIdType(halfWindowRange) : 0;
+            
+            chunk.m_randomizationWindow.m_end = chunk.m_randomizationWindow.m_begin + windwowSize;
+
+            if (chunk.m_randomizationWindow.m_end > m_randomizedChunks.size()) 
+            {
+                chunk.m_randomizationWindow.m_end = ChunkIdType(m_randomizedChunks.size());
+                chunk.m_randomizationWindow.m_begin =
+                    (m_randomizedChunks.size() > windwowSize) ? ChunkIdType(m_randomizedChunks.size() - windwowSize) : 0;
+            }
         }
     }
 }}}

@@ -42,8 +42,8 @@ public:
         IDataDeserializerPtr deserializer,
         bool shouldPrefetch,
         bool multithreadedGetNextSequences = false,
-        size_t maxNumberOfInvalidSequences = 0,
-        bool sampleBasedRandomizationWindow = true); // per worker
+        size_t maxNumberOfInvalidSequences = 0, // per worker
+        bool sampleBasedRandomizationWindow = true);
 
     // Starts a new epoch.
     virtual void StartEpoch(const EpochConfiguration& config) override;

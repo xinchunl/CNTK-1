@@ -10,6 +10,7 @@
 #include "TextConfigHelper.h"
 #include "DataReader.h"
 #include "StringUtil.h"
+#include "ReaderConstants.h"
 
 using std::string;
 using std::wstring;
@@ -148,13 +149,13 @@ TextConfigHelper::TextConfigHelper(const ConfigParameters& config)
     m_skipSequenceIds = config(L"skipSequenceIds", false);
     m_maxErrors = config(L"maxErrors", 0);
     m_traceLevel = config(L"traceLevel", 1);
-    m_chunkSizeBytes = config(L"chunkSizeInBytes", 32 * 1024 * 1024); // 32 MB by default
+    m_chunkSizeBytes = config(L"chunkSizeInBytes", g_32MB); // 32 MB by default
     m_keepDataInMemory = config(L"keepDataInMemory", false);
     m_frameMode = config(L"frameMode", false);
 
     if (!m_sampleBasedRandomizationWindow && m_randomizationWindow == randomizeAuto) 
     {
-        m_randomizationWindow = (4 << 30) / m_chunkSizeBytes; // ~ 4 GB
+        m_randomizationWindow = g_4GB / m_chunkSizeBytes; // ~ 4 GB (on disk) worth of chunks
     }
 }
 
