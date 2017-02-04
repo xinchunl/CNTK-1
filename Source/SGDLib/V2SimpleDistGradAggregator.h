@@ -342,6 +342,8 @@ private:
     // Buffered gradients that we asynchronously aggregate
     std::unordered_map<Matrix<ElemType>*, std::unique_ptr<Matrix<ElemType>>> m_bufferedGradients;
     DistGradHeader* m_bufferedGradHeader;
+    std::vector<size_t> m_PackedGradientsIndex;
+    std::vector<size_t> m_noPackedGradientsIndex;
 
     // Only used for controlling frequency of measuring/showing gradient aggregation perf stats
     int m_syncStatsTrace;
