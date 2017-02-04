@@ -2799,7 +2799,7 @@ namespace CNTK
         }
 
         ///
-        /// Returns the set of all Constant variables of 'this' Function.
+        /// Returns the set of all Placeholder variables of 'this' Function.
         ///
         std::vector<Variable> Placeholders() const
         {
