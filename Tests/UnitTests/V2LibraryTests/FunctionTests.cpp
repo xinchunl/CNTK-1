@@ -790,58 +790,6 @@ void CheckFindByNameResult(FunctionPtr actual, FunctionPtr expected)
     }
 }
 
-void TestFindByName()
-{
-    size_t inputDim = 10;
-    size_t outputDim = 20;
-    const std::wstring timesFuncName = L"TimesFunc";
-    const std::wstring plusFuncName = L"PlusFunc";
-    const std::wstring plusFuncName2 = L"PlusFunc2";
-    const std::wstring minusFuncName = L"MinusFunc";
-
-    auto inputVar = InputVariable({ inputDim }, DataType::Float, L"features");
-
-    auto inputPlaceholder = PlaceholderVariable(L"inputPlaceholder");
-    auto timesParam = CNTK::Parameter(CNTK::NDArrayView::RandomUniform<float>({ outputDim, inputDim }, -0.05, 0.05, 1, DeviceDescriptor::DefaultDevice()));
-    auto timesFunc = CNTK::Times(timesParam, inputPlaceholder, timesFuncName);
-    auto plusFunc = CNTK::Plus(Constant::Scalar(2.0f), timesFunc, plusFuncName);
-    auto plusFunc2 = CNTK::Plus(Constant::Scalar(2.0f), plusFunc, plusFuncName);
-    auto minusFunc = CNTK::Minus(plusFunc2, Constant::Scalar(1.0f), minusFuncName);
-
-    auto blockFunc = CNTK::AsBlock(std::move(minusFunc), { { inputPlaceholder, inputVar} }, L"TimesPlusMinus", L"BlockFunc");
-
-    auto inputVar2 = InputVariable({ outputDim }, DataType::Float, L"features2");
-    auto plusFunc3 = CNTK::Plus(Constant::Scalar(3.0f), inputVar2, plusFuncName2);
-    auto plusFunc4 = CNTK::Plus(plusFunc3, blockFunc, plusFuncName);
-    auto minusFunc2 = CNTK::Minus(plusFunc4, Constant::Scalar(1.0f), minusFuncName);
-
-    // Test functions that don't use any block function
-    CheckFindByNameResult(minusFunc->FindByName(timesFuncName), timesFunc);
-    CheckFindByNameResult(minusFunc->FindByName(L"NonExistingFunc"), nullptr);
-    VerifyException([&minusFunc, &plusFuncName]() {
-        minusFunc->FindByName(plusFuncName);
-    }, "The expected exception has not been caugth: multiple functions with the same name.");
-
-    // Test functions that use block functions, but nestedSearchInsideBlockFunction is false.
-    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName2), plusFunc3);
-    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName), plusFunc4);
-    CheckFindByNameResult(minusFunc2->FindByName(minusFuncName), minusFunc2);
-    CheckFindByNameResult(minusFunc2->FindByName(timesFuncName), nullptr);
-    CheckFindByNameResult(minusFunc2->FindByName(L"NonExistingFunc"), nullptr);
-
-    // Test nestedSearchInsideBlockFunction.
-    CheckFindByNameResult(minusFunc2->FindByName(plusFuncName2, true), plusFunc3);
-    CheckFindByNameResult(minusFunc2->FindByName(timesFuncName, true), timesFunc);
-    CheckFindByNameResult(minusFunc2->FindByName(L"NonExistingFunc", true), nullptr);
-    VerifyException([&minusFunc2, &plusFuncName]() {
-        minusFunc2->FindByName(plusFuncName, true);
-    }, "The expected exception has not been caugth: multiple functions with the same name.");
-    VerifyException([&minusFunc2, &minusFuncName]() {
-        minusFunc2->FindByName(minusFuncName, true);
-    }, "The expected exception has not been caugth: multiple functions with the same name.");
-}
-
-
 void CheckFindAllWithNameResult(std::vector<FunctionPtr> actual, std::wstring expectedName, size_t expectedSize)
 {
     if (actual.size() != expectedSize)
@@ -856,7 +804,7 @@ void CheckFindAllWithNameResult(std::vector<FunctionPtr> actual, std::wstring ex
     }
 }
 
-void TestFindAllWithName()
+void TestFindName()
 {
     size_t inputDim = 10;
     size_t outputDim = 20;
@@ -871,6 +819,7 @@ void TestFindAllWithName()
     const std::wstring emptyFuncName = L"";
     const std::wstring placeholderName = L"inputPlaceholder";
     const std::wstring variableName = L"features";
+    const std::wstring aliasFuncName = L"aliasFunc";
 
     auto inputVar1 = InputVariable({ inputDim }, DataType::Float, L"features");
 
@@ -900,8 +849,10 @@ void TestFindAllWithName()
     CheckFindAllWithNameResult(minusFunc1->FindAllWithName(placeholderName), placeholderName, 0);
     CheckFindAllWithNameResult(minusFunc1->FindAllWithName(plusFuncName), plusFuncName, 2);
 
-    auto blockFunc = CNTK::AsBlock(std::move(emptyNameFunc1), { { inputPlaceholder1, inputVar1 } }, L"TimesPlusMinus", blockFuncName);
+    // Build a block function
+    auto blockFunc = CNTK::AsBlock(std::move(minusFunc1), { { inputPlaceholder1, inputVar1 } }, L"TimesPlusMinus", blockFuncName);
 
+    // Build a nested block function
     auto inputPlaceholder2 = PlaceholderVariable(L"inputPlaceholder");
     auto inputPlaceholder3 = PlaceholderVariable(L"inputPlaceholder");
     auto inputVar2 = InputVariable({ outputDim }, DataType::Float, L"features");
@@ -912,6 +863,7 @@ void TestFindAllWithName()
     auto plusFunc4 = CNTK::Plus(minusFunc2, Constant::Scalar(3.0f), plusFuncName);
     auto nestedBlockFunc = CNTK::AsBlock(std::move(plusFunc4), { { inputPlaceholder2, inputVar2 },{ inputPlaceholder3, inputVar1 } }, L"NestedBlock", nestedBlockFuncName);
 
+    // Build a function having both block and nested block functions
     auto inputVar3 = InputVariable({ outputDim }, DataType::Float, variableName);
     auto plusFunc5 = CNTK::Plus(inputVar3, blockFunc, plusFuncName);
     auto anotherPlusFunc1 = CNTK::Plus(plusFunc5, nestedBlockFunc, anotherPlusFuncName);
@@ -964,16 +916,27 @@ void TestFindAllWithName()
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(blockFuncName), blockFuncName, 1);
 
     // Test FindAllWithName with block funcitons, nestedSearchInsideBlockFunction is true
-    CheckFindAllWithNameResult(minusFunc3->FindAllWithName(anotherPlusFuncName, true), anotherMinusFuncName, 1);
+    CheckFindAllWithNameResult(minusFunc3->FindAllWithName(anotherPlusFuncName, true), anotherPlusFuncName, 1);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(anotherMinusFuncName, true), anotherMinusFuncName, 1);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(nonExistingFuncName, true), nonExistingFuncName, 0);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(variableName, true), variableName, 0);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(nestedBlockFuncName, true), nestedBlockFuncName, 1);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(plusFuncName, true), plusFuncName, 7);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(timesFuncName, true), timesFuncName, 2);
-    CheckFindAllWithNameResult(minusFunc3->FindAllWithName(emptyFuncName), emptyFuncName, 2);
+    CheckFindAllWithNameResult(minusFunc3->FindAllWithName(emptyFuncName,true), emptyFuncName, 2);
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(minusFuncName, true), minusFuncName, 4); 
     CheckFindAllWithNameResult(minusFunc3->FindAllWithName(blockFuncName, true), blockFuncName, 2);
+
+    // Test alias
+    auto aliasFunc1 = Alias(anotherPlusFunc1, aliasFuncName);
+    // The Alias does not really create an alias for the function, but indeed create a new function having alias as name.
+    // The new function is not a part of existing graph, except it is explicitly referenced in the graph.
+    // TODO: change the tests when Alias is a real alias of a function.
+    CheckFindByNameResult(minusFunc3->FindByName(aliasFuncName), nullptr);
+    CheckFindAllWithNameResult(minusFunc3->FindAllWithName(aliasFuncName, true), aliasFuncName, 0);
+    auto minusFunc4 = CNTK::Minus(aliasFunc1, minusFunc3, minusFuncName);
+    CheckFindByNameResult(minusFunc4->FindByName(aliasFuncName), aliasFunc1);
+    CheckFindAllWithNameResult(minusFunc4->FindAllWithName(aliasFuncName, true), aliasFuncName, 1);
 }
 
 void FunctionTests()
@@ -982,7 +945,7 @@ void FunctionTests()
 
     TestSplice();
 
-    TestFindAllWithName();
+    TestFindName();
 
     TestChangingParameterValues<float>(2, DeviceDescriptor::CPUDevice());
     if (IsGPUAvailable())
