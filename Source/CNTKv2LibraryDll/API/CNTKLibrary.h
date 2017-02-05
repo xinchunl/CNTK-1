@@ -2607,16 +2607,12 @@ namespace CNTK
                                        const std::unordered_map<Variable, ValuePtr>& rootGradientValues,
                                        std::unordered_map<Variable, ValuePtr>& backPropagatedGradientValuesForInputs);
 
-#ifndef SWIGCSHARP
         ///
         /// Returns the name of the operation that this Function denotes
         ///
         virtual const std::wstring& OpName() const = 0;
-#endif
 
-#ifndef SWIGCSHARP
     protected:
-
         ///
         /// Computes and stores the values of specified variables in the 'outputs' map, using provided 'inputs' values for each input of the Function.
         /// The variables specified in the 'outputs' map denote the subset of 'this' Function's output variables that the caller wants to obtain values of. 
@@ -2644,7 +2640,6 @@ namespace CNTK
         /// crossing of dll boundary.
         ///
         CNTK_API virtual void InferOutputs(std::vector<Variable>& outputs) = 0;
-#endif
 
     public:
 

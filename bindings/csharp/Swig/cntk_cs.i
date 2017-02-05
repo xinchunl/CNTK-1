@@ -42,7 +42,7 @@
 %template(DeviceDescriptorVector) std::vector<CNTK::DeviceDescriptor>;
 %template(UnorderedMapVariableValuePtr) std::unordered_map<CNTK::Variable, std::shared_ptr<CNTK::Value>>;
 %template(UnorderedMapVariableVariable) std::unordered_map<CNTK::Variable, CNTK::Variable>;
-%template(FunctionVector) std::vector<CNTK::Function>;
+%template(FunctionPtrVector) std::vector<std::shared_ptr<CNTK::Function>>;
 
 %template() std::vector<bool>;
 %template() std::pair<size_t, double>;
