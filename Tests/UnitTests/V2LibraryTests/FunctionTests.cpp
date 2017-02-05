@@ -779,14 +779,14 @@ void CheckFindByNameResult(FunctionPtr actual, FunctionPtr expected)
     if (actual == nullptr)
     {
         if (expected != nullptr)
-            ReportFailure("The expected function '%S' has not been found.", expected->Name());
+            ReportFailure("The expected function '%S' has not been found.", expected->Name().c_str());
     }
     else 
     {
         if (expected == nullptr)
-            ReportFailure("Found a function '%S', but null is expected.", actual->Name());
+            ReportFailure("Found a function '%S', but null is expected.", actual->Name().c_str());
         else if (expected->Name().compare(actual->Name()) != 0)
-            ReportFailure("The found function '%S' does have the same name as the exepected one '%S'", actual->Name(), expected->Name());
+            ReportFailure("The found function '%S' does have the same name as the exepected one '%S'", actual->Name().c_str(), expected->Name().c_str());
     }
 }
 
@@ -799,7 +799,7 @@ void CheckFindAllWithNameResult(std::vector<FunctionPtr> actual, std::wstring ex
         for (size_t i = 0; i < actual.size(); i++)
         {
             if (actual[i]->Name().compare(expectedName) != 0)
-                ReportFailure("The found function '%S' does have the same name as the exepected one '%S'", actual[i]->Name(), expectedName);
+                ReportFailure("The found function '%S' does have the same name as the exepected one '%S'", actual[i]->Name().c_str(), expectedName.c_str());
         }
     }
 }
